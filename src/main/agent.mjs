@@ -18,7 +18,12 @@ const runTool = (name, args, signal) =>
   })
 
 // รายชื่อที่ให้เลือกในหน้าจอ ตัวแรกคือค่าเริ่มต้น
-export const MODELS = ['qwen/qwen3.7-flash', 'z-ai/glm-5.3-flash', 'deepseek/deepseek-v4.1-flash']
+export const MODELS = [
+  'qwen/qwen3.7-flash',
+  'z-ai/glm-5.3-flash',
+  'upstage/solar-pro4',
+  'deepseek/deepseek-v4.1-flash'
+]
 // reasoning กินโควตานี้ก่อน ตั้งต่ำไปจะได้แต่ความคิดแล้วไม่เหลือ token ให้ตอบ
 // (OpenRouter กันเครดิตล่วงหน้าตามค่านี้ด้วย เครดิตน้อยแล้วเจอ 402 ให้ลดลง)
 const MAX_TOKENS = 8192
