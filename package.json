@@ -8,6 +8,7 @@
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
+    "spike": "node --env-file=.env spike.mjs",
     "test": "node test/db.test.mjs && node test/sql.test.mjs && node test/parse.test.mjs && node test/history.test.mjs && node test/excel.test.mjs && node test/api.test.mjs && node test/check.test.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
