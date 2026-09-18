@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { lastResult } from './parse.mjs'
 
@@ -15,6 +15,10 @@ function Result({ step }) {
       📄 เปิดไฟล์ Excel ({r.rowCount.toLocaleString()} แถว)
     </button>
   )
+  // ผลจาก tool ความจำ
+  if (r.saved) return <div className="more">🧠 จำไว้แล้ว: {r.saved}</div>
+  if (r.forgot) return <div className="more">🧠 ลืมแล้ว: {r.forgot.join(', ')}</div>
+
   // ผลจาก rest_api ไม่ใช่ตาราง
   if (r.status !== undefined)
     return (
@@ -24,6 +28,8 @@ function Result({ step }) {
         {(typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2)).slice(0, 4000)}
       </pre>
     )
+  // tool อื่นที่ไม่ได้คืนตาราง — อย่าให้หน้าจอพังเพราะรูปแบบไม่ตรง
+  if (!r.columns) return <pre className="result-raw">{JSON.stringify(r, null, 1)}</pre>
   if (!r.columns.length) return <div className="more">รันสำเร็จ ({r.rowCount} แถวถูกแก้ไข)</div>
 
   return (
@@ -64,6 +70,18 @@ function legacy(output = '') {
     rows: body.slice(0, 200),
     rowCount: body.length,
     truncated: body.length > 200
+  }
+}
+
+// ผลจาก tool รูปแบบใหม่ๆ ไม่ควรทำให้ทั้งหน้าจอหาย — พังเฉพาะข้อความนั้นพอ
+class Safe extends Component {
+  state = { err: null }
+  static getDerivedStateFromError(err) {
+    return { err }
+  }
+  render() {
+    if (!this.state.err) return this.props.children
+    return <div className="result-error">แสดงผลลัพธ์ไม่ได้: {String(this.state.err.message)}</div>
   }
 }
 
@@ -236,7 +254,9 @@ function App() {
                       <CopyButton text={m.step.sql} />
                     </div>
                   </details>
-                  <Result step={m.step} />
+                  <Safe>
+                    <Result step={m.step} />
+                  </Safe>
                 </>
               )}
               {/* คำตอบ agent เป็น markdown (react-markdown escape ให้ ไม่ต้องยุ่งกับ innerHTML) */}

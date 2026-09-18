@@ -83,8 +83,12 @@ ${saved.map((m) => `- ${m}`).join('\n')}`
       const done = await Promise.all(
         msg.tool_calls.map(async (call) => {
           const args = JSON.parse(call.function.arguments || '{}')
-          // rest_api ไม่มี sql — โชว์ method+url ในช่องเดียวกันแทน
-          const stmt = args.sql ?? `${(args.method || 'GET').toUpperCase()} ${args.url ?? ''}`
+          // tool ที่ไม่ใช่ sql ก็ต้องมีป้ายบอกว่าทำอะไร ไม่งั้นช่องบนจอว่างเปล่า
+          const stmt =
+            args.sql ??
+            (args.url
+              ? `${(args.method || 'GET').toUpperCase()} ${args.url}`
+              : `${call.function.name}: ${Object.values(args).join(' ')}`)
           onStep?.({ sql: stmt })
           return { call, stmt, result: await runTool(call.function.name, args, signal) }
         })
