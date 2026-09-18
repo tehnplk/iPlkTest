@@ -2,24 +2,9 @@ const MAX_BYTES = 200000
 const TIMEOUT_MS = 30000
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
-// ponytail: กันด้วย allowlist ของ host เท่านั้น ไม่ได้กัน SSRF ระดับ IP (127.x/169.254.x)
-// ถ้าเปิดให้ยิงเน็ตกว้างๆ ควรตั้งรายชื่อ host ให้แคบไว้
-export function isAllowed(url, allow) {
-  if (!allow.length) return false
-  if (allow.includes('*')) return true
-  const host = url.host.toLowerCase() // มี port ติดมาด้วยถ้าระบุ
-  const name = url.hostname.toLowerCase()
-  return allow.some((a) => {
-    const rule = a.trim().toLowerCase()
-    if (!rule) return false
-    if (rule.startsWith('*.')) return name.endsWith(rule.slice(1))
-    return rule === host || rule === name
-  })
-}
-
-export function openApi({ allow = '', token = '' }) {
-  const hosts = allow.split(',').filter(Boolean)
-
+// ponytail: ยิงได้ทุก host ตามที่ผู้ใช้สั่ง ไม่มี allowlist — โมเดลเข้าถึง 127.0.0.1 และเครื่องใน LAN ได้ด้วย
+// ถ้าวันหนึ่งต้องล็อก ให้กลับมาเช็ค hostname ตรงนี้จุดเดียว
+export function openApi({ token = '' } = {}) {
   return async function call({ url, method = 'GET', body, headers = {} }, signal) {
     let target
     try {
@@ -28,12 +13,6 @@ export function openApi({ allow = '', token = '' }) {
       return { error: `URL ไม่ถูกต้อง: ${url}` }
     }
     if (!/^https?:$/.test(target.protocol)) return { error: 'รองรับเฉพาะ http/https' }
-    if (!hosts.length)
-      return {
-        error: 'ยังไม่ได้ตั้งค่า MAIN_VITE_API_ALLOW ผู้ใช้ต้องอนุญาต host ก่อนถึงจะเรียก API ได้'
-      }
-    if (!isAllowed(target, hosts))
-      return { error: `host ${target.host} ไม่อยู่ในรายการที่อนุญาต (${hosts.join(', ')})` }
 
     const verb = String(method).toUpperCase()
     if (!METHODS.includes(verb)) return { error: `method ${verb} ไม่รองรับ` }
@@ -69,11 +48,7 @@ export function openApi({ allow = '', token = '' }) {
   }
 }
 
-// ค่าเริ่มต้นเปิดให้เรียกได้ทุก host ตามที่ผู้ใช้สั่ง — ใส่รายชื่อใน MAIN_VITE_API_ALLOW เมื่อต้องการจำกัด
-const callApi = openApi({
-  allow: import.meta.env?.MAIN_VITE_API_ALLOW || '*',
-  token: import.meta.env?.MAIN_VITE_API_TOKEN || ''
-})
+const callApi = openApi({ token: import.meta.env?.MAIN_VITE_API_TOKEN || '' })
 
 export const apiTool = {
   name: 'rest_api',

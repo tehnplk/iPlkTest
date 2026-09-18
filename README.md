@@ -12,7 +12,7 @@ Electron + React + Vite (electron-vite) · โมเดลผ่าน OpenRoute
 - ต่อ connection ค้างไว้ → ใช้ `CREATE TEMPORARY TABLE` ซอย query หนักเป็นหลายขั้นข้าม call ได้
 - หลาย query ในรอบเดียวรันขนานผ่าน pool
 - export ผลเป็นไฟล์ Excel (.xlsx) ลง Downloads แล้วกดเปิดจากในแอปได้
-- เรียก REST API ภายนอกได้ เฉพาะ host ที่อนุญาตไว้
+- เรียก REST API ภายนอกได้ทุก host
 - ตอบแบบ stream, กดหยุดกลางคันได้แล้วสั่ง "ทำต่อ"
 - ประวัติการสนทนาเก็บใน PGlite (Postgres ฝังในแอป) ที่ `userData/pgdata`
 
@@ -56,7 +56,7 @@ src/main/
   tools/
     sql.mjs       รัน SQL + กันคำสั่งเขียนข้อมูล
     excel.mjs     export .xlsx
-    api.mjs       เรียก REST API ตาม allowlist
+    api.mjs       เรียก REST API
 src/renderer/     หน้าจอแชท (React)
 ```
 

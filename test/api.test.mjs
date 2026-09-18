@@ -1,16 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { isAllowed, openApi } from '../src/main/tools/api.mjs'
-
-// --- allowlist ---
-const u = (s) => new URL(s)
-assert.equal(isAllowed(u('https://a.go.th/x'), ['a.go.th']), true)
-assert.equal(isAllowed(u('https://a.go.th/x'), ['b.go.th']), false)
-assert.equal(isAllowed(u('https://sub.a.go.th/x'), ['*.a.go.th']), true)
-assert.equal(isAllowed(u('https://a.go.th/x'), ['*']), true)
-assert.equal(isAllowed(u('http://localhost:8080/x'), ['localhost:8080']), true)
-assert.equal(isAllowed(u('http://localhost:9999/x'), ['localhost:8080']), false)
-assert.equal(isAllowed(u('https://a.go.th/x'), []), false, 'ไม่ตั้งค่า = ห้ามทั้งหมด')
+import { openApi } from '../src/main/tools/api.mjs'
 
 // --- ยิงจริงใส่เซิร์ฟเวอร์ในเครื่อง ---
 const server = createServer((req, res) => {
@@ -31,7 +21,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, '127.0.0.1', r))
 const base = `http://127.0.0.1:${server.address().port}`
 
-const call = openApi({ allow: `127.0.0.1:${server.address().port}`, token: 'secret-token' })
+const call = openApi({ token: 'secret-token' })
 
 const ok = await call({ url: `${base}/ping` })
 assert.equal(ok.status, 200)
@@ -44,15 +34,13 @@ assert.equal(posted.body.got, '{"hn":"123"}')
 // สถานะ error ของปลายทางไม่ใช่ข้อผิดพลาดของ tool
 assert.equal((await call({ url: `${base}/fail` })).status, 500)
 
-// นอก allowlist / โปรโตคอลแปลก / method แปลก ต้องคืน error ไม่ใช่ยิงออกไป
-assert.ok((await call({ url: 'https://evil.example.com/x' })).error)
-assert.ok((await call({ url: 'file:///etc/passwd' })).error)
+// โปรโตคอลแปลก / method แปลก ต้องคืน error ไม่ใช่ยิงออกไป
+assert.ok((await call({ url: 'file:///etc/passwd' })).error, 'อ่านไฟล์ผ่าน tool ไม่ได้')
 assert.ok((await call({ url: `${base}/x`, method: 'TRACE' })).error)
 assert.ok((await call({ url: 'ไม่ใช่ url' })).error)
 
-// ไม่ได้ตั้ง allowlist = ค่าเริ่มต้นของแอปคือ '*' (เรียกได้) แต่ตัวฟังก์ชันเองยังต้องได้รับค่ามา
-assert.ok((await openApi({})({ url: `${base}/ping` })).error, 'ส่ง allow ว่างมา = ห้าม')
-assert.equal((await openApi({ allow: '*' })({ url: `${base}/ping` })).status, 200)
+// ไม่ต้องตั้งค่าอะไรก็เรียกได้
+assert.equal((await openApi()({ url: `${base}/ping` })).status, 200)
 
 server.close()
 console.log('api ok')
