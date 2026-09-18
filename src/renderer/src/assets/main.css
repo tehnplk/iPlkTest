@@ -40,6 +40,32 @@ body {
   grid-template-rows: 100%;
 }
 
+/* scrollbar ให้เห็นชัดว่าเลื่อนได้ (ค่า default ของ Chromium บนพื้นมืดแทบมองไม่เห็น) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: #4a4a52;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #66666f;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* left: ประวัติการสนทนา */
 .sidebar {
   display: flex;
@@ -52,7 +78,10 @@ body {
 }
 
 .new-chat {
-  padding: 10px;
+  flex: none;
+  display: block;
+  line-height: 2;
+  padding: 6px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: transparent;
@@ -75,7 +104,12 @@ body {
 }
 
 .convo {
-  padding: 10px;
+  /* flex item หดได้เป็นค่าเริ่มต้น พอรายการเยอะมันเลยถูกบีบจนข้อความล้นไปทับแถวอื่น
+     ต้องสั่ง flex: none ให้สูงตามเนื้อหา แล้วปล่อยให้กล่องแม่ scroll แทน */
+  flex: none;
+  display: block;
+  line-height: 2;
+  padding: 6px 10px;
   border: none;
   border-radius: 8px;
   background: transparent;

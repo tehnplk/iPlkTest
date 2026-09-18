@@ -239,14 +239,14 @@ function App() {
           <span className="title">{active?.title ?? ''}</span>
           <select
             value={engine}
-            title="loop = ที่เขียนเอง, sdk = @openai/agents"
+            title="กลไกที่ใช้คุมรอบคุยกับโมเดล — loop: เขียนเอง มีรอบตรวจคำตอบ / sdk: @openai/agents มีขออนุมัติก่อนรัน"
             onChange={(e) => {
               setEngine(e.target.value)
               localStorage.setItem('engine', e.target.value)
             }}
           >
-            <option value="loop">loop</option>
-            <option value="sdk">sdk</option>
+            <option value="loop">loop (เขียนเอง)</option>
+            <option value="sdk">sdk (@openai/agents)</option>
           </select>
           <select
             value={model}

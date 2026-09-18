@@ -9,7 +9,7 @@ import {
   setOpenAIAPI,
   setTracingDisabled
 } from '@openai/agents'
-import { sqlTool } from './tools/sql.mjs'
+import { sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
@@ -59,6 +59,7 @@ export async function askAgentSdk(
 
   const runner = new Runner()
   let step = null
+  const script = []
 
   const drain = async (stream) => {
     for await (const ev of stream) {
@@ -68,6 +69,7 @@ export async function askAgentSdk(
           const args = JSON.parse(it.rawItem?.arguments || '{}')
           onStep?.({ sql: args.sql ?? `${it.rawItem?.name}: ${Object.values(args).join(' ')}` })
           step = { sql: args.sql ?? it.rawItem?.name, result: null }
+          if (isTemp(args.sql) && !script.includes(args.sql)) script.push(args.sql)
         }
         if (it.type === 'tool_call_output_item') {
           try {
@@ -96,5 +98,7 @@ export async function askAgentSdk(
     await drain(result)
   }
 
+  // คำสั่งที่สร้าง/ใช้ temp table ต้องโชว์ครบทั้งชุด ไม่งั้นผู้ใช้ก็อป SQL ไปรันเองไม่ได้
+  if (step && script.length) step = { ...step, sql: script.join(';\n\n') }
   return { role: 'assistant', content: result.finalOutput ?? '', step }
 }

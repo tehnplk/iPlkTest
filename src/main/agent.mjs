@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import OpenAI from 'openai'
-import { db, sqlTool } from './tools/sql.mjs'
+import { db, sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
@@ -61,6 +61,8 @@ async function chat(messages, model, onStep, onDelta, signal) {
   const history = toHistory(messages)
   const convo = [{ role: 'system', content: await buildSystem() }, ...history]
   let step = null
+  // คำสั่งที่สร้าง/ใช้ temp table ต้องโชว์ครบทั้งชุด ไม่งั้นผู้ใช้ก็อป SQL ไปรันเองไม่ได้
+  const script = []
 
   // ponytail: ไม่จำกัดจำนวนรอบตามที่ผู้ใช้สั่ง — โมเดลวนไม่จบได้และค่า token โตทุกรอบ
   // ถ้าเจอวนไม่หยุด: ปิดแอป แล้วใส่ cap กลับที่ลูปนี้
@@ -81,8 +83,12 @@ async function chat(messages, model, onStep, onDelta, signal) {
       stream.on('content', (delta) => onDelta?.(delta))
       const res = await stream.finalChatCompletion()
       const msg = res.choices[0].message
-      // เก็บแค่ step สุดท้าย — UI โชว์ SQL ที่ใช้จริงอันเดียวพอ
-      if (!msg.tool_calls?.length) return { msg, step }
+      // โชว์ step สุดท้าย แต่ถ้ามีการสร้าง temp table ต้องคืนทั้งชุดคำสั่ง ไม่งั้นก็อปไปรันเองไม่ได้
+      if (!msg.tool_calls?.length)
+        return {
+          msg,
+          step: step && script.length ? { ...step, sql: script.join(';\n\n') } : step
+        }
       convo.push(msg)
       // โมเดลขอหลาย query ในรอบเดียวได้ รันพร้อมกันเลย (ตัวที่แตะ tmp_ ถูกบังคับให้เรียงคิวใน sql.mjs)
       const done = await Promise.all(
@@ -104,6 +110,7 @@ async function chat(messages, model, onStep, onDelta, signal) {
           d.result.hint =
             'ได้ 0 แถว ให้ตรวจคีย์ join เงื่อนไข และค่ารหัสที่ใช้ ก่อนสรุปว่าไม่มีข้อมูล'
         step = { sql: d.stmt, result: d.result }
+        if (isTemp(d.stmt) && !script.includes(d.stmt)) script.push(d.stmt)
         convo.push({ role: 'tool', tool_call_id: d.call.id, content: JSON.stringify(d.result) })
       }
     } catch (err) {

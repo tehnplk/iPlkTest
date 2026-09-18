@@ -3,6 +3,9 @@ import mysql from 'mysql2/promise'
 const MAX_ROWS = 200
 const TIMEOUT_SEC = 60
 
+// คำสั่งที่แตะ temp table ต้องอยู่ connection เดิม และต้องถูกรวมเป็นสคริปต์เดียวตอนโชว์ให้ผู้ใช้
+export const isTemp = (sql) => /\btmp_/i.test(sql ?? '')
+
 const READ = /^\s*(select|show|desc|describe|explain|with|set\s)/i
 const TMP =
   /^\s*(create\s+temporary\s+table|insert\s+into\s+`?tmp_|update\s+`?tmp_|delete\s+from\s+`?tmp_|drop\s+(temporary\s+)?table\s+(if\s+exists\s+)?`?tmp_)/i
@@ -54,7 +57,7 @@ export function openSql(config) {
       const bad = checkSql(sql)
       if (bad) return { error: bad }
 
-      const session = /\btmp_/i.test(sql)
+      const session = isTemp(sql)
       const c = session ? await connect() : await getPool().getConnection()
       const onAbort = () => {
         c.destroy()
