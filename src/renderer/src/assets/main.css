@@ -1,0 +1,444 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #1c1c1e;
+  --panel: #232326;
+  --border: #35353a;
+  --text: #e8e8ea;
+  --muted: #8b8b92;
+  --accent: #3b82f6;
+  /* โทนเขียวของฝั่ง agent ทำให้กลมกลืนกับพื้นมืดของแอป ไม่ใช่แปะสีสว่างทับ */
+  --agent: #1e2a23;
+  --agent-line: #35483c;
+  --panel-dark: #15191b;
+}
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    14px/1.5 'Segoe UI',
+    'Leelawadee UI',
+    system-ui,
+    sans-serif;
+}
+
+#root,
+.app {
+  height: 100%;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  /* ล็อกความสูงแถวไว้เท่าจอ ไม่งั้นแถวยืดตามเนื้อหาแล้วลูกข้างในไม่มีวัน scroll */
+  grid-template-rows: 100%;
+}
+
+/* left: ประวัติการสนทนา */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.new-chat {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.new-chat:hover {
+  background: #2c2c30;
+}
+
+/* min-height: 0 ทุกตัวที่ต้องหดได้ — ค่า auto ของ grid/flex item ห้ามหดต่ำกว่าเนื้อหา */
+.convo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.convo {
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.convo:hover {
+  background: #2c2c30;
+}
+
+.convo.active {
+  background: #303035;
+  color: var(--text);
+}
+
+/* right: conversation with agent */
+.chat {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.messages {
+  padding: 20px;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty {
+  margin: auto;
+  color: var(--muted);
+}
+
+.msg {
+  max-width: 70%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+}
+
+.msg.assistant {
+  /* เต็มความกว้างไปเลย เพราะมีตารางผลลัพธ์ ฝั่ง user ค่อยเป็นฟองชิดขวา */
+  width: 100%;
+  max-width: 100%;
+  line-height: 1.65;
+  align-self: stretch;
+  /* markdown จัดย่อหน้าให้แล้ว ถ้าปล่อย pre-wrap ไว้ \n\n จะกลายเป็นบรรทัดว่างซ้อนกับ margin ของ <p> */
+  white-space: normal;
+  background: var(--agent);
+  border: 1px solid var(--agent-line);
+}
+
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.composer textarea {
+  flex: 1;
+  /* โตตามเนื้อหาเอง (Chromium 123+) ไม่ต้องคำนวณความสูงด้วย JS */
+  field-sizing: content;
+  max-height: 160px;
+  resize: none;
+  line-height: 1.5;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.composer textarea:focus {
+  border-color: var(--accent);
+}
+
+/* markdown ในคำตอบของ agent */
+.msg :first-child {
+  margin-top: 0;
+}
+
+.msg :last-child {
+  margin-bottom: 0;
+}
+
+.msg p,
+.msg ul,
+.msg ol {
+  margin: 0 0 10px;
+}
+
+.msg ul,
+.msg ol {
+  padding-left: 22px;
+}
+
+.msg li {
+  margin-bottom: 2px;
+}
+
+.msg li > p {
+  margin: 0;
+}
+
+.msg h1,
+.msg h2,
+.msg h3 {
+  margin: 16px 0 8px;
+  font-size: 15px;
+}
+
+.msg hr {
+  margin: 14px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.msg code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #2f2f35;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.msg pre code {
+  display: block;
+  padding: 10px;
+  overflow-x: auto;
+}
+
+.msg blockquote {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+
+/* SQL ที่ agent ใช้ + ตารางผลลัพธ์ */
+.sql-box {
+  margin-bottom: 10px;
+}
+
+.sql-box summary {
+  padding: 5px 10px;
+  border: 1px solid var(--agent-line);
+  border-radius: 6px;
+  background: var(--panel-dark);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #7fbf9a;
+}
+
+/* ปุ่มคัดลอกลอยมุมขวาบนของกล่องที่กางออก */
+.sql-wrap {
+  position: relative;
+}
+
+.copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-dark);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.copy:hover {
+  background: #2c2c30;
+  color: var(--text);
+}
+
+.sql-box[open] summary {
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.sql-box .sql {
+  margin: 0;
+}
+
+.sql {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--agent-line);
+  border-left: 3px solid #4d9e70;
+  border-radius: 6px;
+  background: var(--panel-dark);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: #9fd6b4;
+}
+
+.result {
+  max-height: 420px;
+  margin-bottom: 10px;
+  /* พื้นเข้มเป็นกลาง + กรอบชัด ให้เห็นเป็นพื้นที่ตารางแยกออกจากฟองเขียว */
+  background: var(--panel-dark);
+  border: 1px solid var(--agent-line);
+  border-radius: 6px;
+  overflow: auto;
+}
+
+/* แถวสุดท้ายไม่ต้องมีเส้นล่างซ้อนกับกรอบ */
+.result tr:last-child td {
+  border-bottom: none;
+}
+
+.result table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.result th,
+.result td {
+  padding: 5px 10px;
+  /* เส้น grid จางๆ ให้ไล่สายตาตามคอลัมน์ได้ */
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.result th:last-child,
+.result td:last-child {
+  border-right: none;
+}
+
+.result th {
+  position: sticky;
+  top: 0;
+  background: #1f2a24;
+  /* หัวตารางใช้เส้นทึบคั่นให้ชัด */
+  border-bottom: 2px solid #3f5a4a;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.open-file {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-top: 1px solid var(--agent-line);
+  background: #1f2a24;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.open-file:hover {
+  background: #26352d;
+}
+
+.result-error {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid #6b3030;
+  border-radius: 6px;
+  background: #2a1c1c;
+  color: #ff9b9b;
+  font-size: 12px;
+}
+
+.result-raw {
+  margin: 0 0 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.more {
+  padding: 5px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.msg.thinking {
+  color: var(--muted);
+}
+
+.dots {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.sql.running {
+  margin: 8px 0 0;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.continue {
+  display: block;
+  margin-top: 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.composer button.stop {
+  background: #b23b3b;
+}
+
+.composer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+}
