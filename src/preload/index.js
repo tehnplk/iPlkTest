@@ -6,7 +6,8 @@ const api = {
   convos: {
     list: () => ipcRenderer.invoke('convos:list'),
     create: (title) => ipcRenderer.invoke('convos:create', title),
-    save: (convo) => ipcRenderer.invoke('convos:save', convo)
+    save: (convo) => ipcRenderer.invoke('convos:save', convo),
+    remove: (id) => ipcRenderer.invoke('convos:delete', id)
   },
   openFile: (path) => ipcRenderer.invoke('file:open', path),
   agent: {

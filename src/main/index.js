@@ -46,6 +46,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('convos:list', () => db.list())
   ipcMain.handle('convos:create', (_e, title) => db.create(title))
   ipcMain.handle('convos:save', (_e, convo) => db.save(convo))
+  ipcMain.handle('convos:delete', (_e, id) => db.remove(id))
 
   // ปุ่มหยุด: ยกเลิกทั้ง request ที่ค้างและ query ที่กำลังรัน
   let running = null

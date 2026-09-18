@@ -106,7 +106,8 @@ body {
 .convo {
   /* flex item หดได้เป็นค่าเริ่มต้น พอรายการเยอะมันเลยถูกบีบจนข้อความล้นไปทับแถวอื่น
      ต้องสั่ง flex: none ให้สูงตามเนื้อหา แล้วปล่อยให้กล่องแม่ scroll แทน */
-  flex: none;
+  flex: 1;
+  min-width: 0;
   display: block;
   line-height: 2;
   padding: 6px 10px;
@@ -122,13 +123,43 @@ body {
   text-overflow: ellipsis;
 }
 
-.convo:hover {
+.convo-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+
+.convo-row:hover {
   background: #2c2c30;
 }
 
-.convo.active {
+.convo-row.active {
   background: #303035;
+}
+
+.convo-row.active .convo {
   color: var(--text);
+}
+
+/* ปุ่มลบโผล่เฉพาะตอนเอาเมาส์ชี้ */
+.convo-del {
+  display: flex;
+  flex: none;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.convo-row:hover .convo-del {
+  opacity: 1;
+}
+
+.convo-del:hover {
+  color: #ff8a8a;
 }
 
 /* right: conversation with agent */

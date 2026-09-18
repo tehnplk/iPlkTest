@@ -32,6 +32,10 @@ export async function openDb(dataDir) {
       )
     },
 
+    remove: async (id) => {
+      await pg.query('DELETE FROM conversations WHERE id = $1', [id])
+    },
+
     // ความจำกลาง ใช้ร่วมกันทุกบทสนทนา แนบเข้า system prompt ทุกครั้ง
     // ponytail: เก็บ 100 บรรทัดล่าสุดพอ ถ้าต้องมากกว่านี้ค่อยทำค้นหาแทนการแนบทั้งก้อน
     memories: async () =>

@@ -164,6 +164,17 @@ function App() {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [active?.messages.length, activeId, runningSql, streamed])
 
+  const removeConvo = async (id, title) => {
+    if (!window.confirm(`ลบบทสนทนา "${title}" ?`)) return
+    await window.api.convos.remove(id)
+    const left = convos.filter((c) => c.id !== id)
+    setConvos(left)
+    if (id !== activeId) return
+    // ลบห้องที่เปิดอยู่ → ย้ายไปห้องแรกที่เหลือ ถ้าไม่เหลือเลยก็เปิดห้องใหม่
+    if (left.length) setActiveId(left[0].id)
+    else newConvo()
+  }
+
   const newConvo = async () => {
     const id = await window.api.convos.create(NEW_TITLE)
     setConvos((prev) => [{ id, title: NEW_TITLE, messages: [] }, ...prev])
@@ -223,13 +234,27 @@ function App() {
         </button>
         <div className="convo-list">
           {convos.map((c) => (
-            <button
-              key={c.id}
-              className={'convo' + (c.id === activeId ? ' active' : '')}
-              onClick={() => setActiveId(c.id)}
-            >
-              {c.title}
-            </button>
+            <div key={c.id} className={'convo-row' + (c.id === activeId ? ' active' : '')}>
+              <button className="convo" onClick={() => setActiveId(c.id)}>
+                {c.title}
+              </button>
+              <button
+                className="convo-del"
+                title="ลบบทสนทนานี้"
+                onClick={() => removeConvo(c.id, c.title)}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
+                </svg>
+              </button>
+            </div>
           ))}
         </div>
       </aside>

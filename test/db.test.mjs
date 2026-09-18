@@ -17,6 +17,10 @@ const saved = rows.find((r) => r.id === id)
 assert.equal(saved.title, 'หัวข้อ')
 assert.deepEqual(saved.messages, [{ role: 'user', content: 'สวัสดี' }])
 
+// ลบบทสนทนา
+await db.remove(second)
+assert.equal((await db.list()).length, 1)
+
 // --- ความจำกลาง ---
 assert.deepEqual(await db.memories(), [])
 
