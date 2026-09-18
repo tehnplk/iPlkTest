@@ -3,7 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
-import { askAgent, closeAgent, MODELS } from './agent.mjs'
+import { askAgent, closeAgent, MODELS, buildSystem } from './agent.mjs'
+import { askAgentSdk } from './agent-sdk.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -53,15 +54,38 @@ app.whenReady().then(async () => {
   ipcMain.handle('agent:models', () => MODELS)
 
   // ส่ง messages ทั้งก้อนกลับไป (รวม reasoning_details เดิม) ให้โมเดลคิดต่อจากของเก่าได้
-  ipcMain.handle('agent:send', async (e, messages, model) => {
+  // ฝั่ง SDK ถามผู้ใช้ก่อนรันคำสั่งเสี่ยง — รอคำตอบจากหน้าจอ
+  let approvals = 0
+  const pending = new Map()
+  ipcMain.handle('agent:approve', (_e, id, ok) => pending.get(id)?.(ok))
+
+  ipcMain.handle('agent:send', async (e, messages, model, engine) => {
     running = new AbortController()
     // onStep = sql ที่กำลังรัน, onDelta = ตัวอักษรที่โมเดลพิมพ์ ส่งให้ UI โชว์สดๆ
-    return askAgent(messages, {
+    const opts = {
       model,
       onStep: (s) => e.sender.send('agent:step', s),
       onDelta: (d) => e.sender.send('agent:delta', d),
       signal: running.signal
-    }).finally(() => (running = null))
+    }
+    const run =
+      engine === 'sdk'
+        ? askAgentSdk(messages, {
+            ...opts,
+            instructions: await buildSystem(),
+            downloadsDir: app.getPath('downloads'),
+            onApproval: (info) =>
+              new Promise((resolve) => {
+                const id = ++approvals
+                pending.set(id, (ok) => {
+                  pending.delete(id)
+                  resolve(ok)
+                })
+                e.sender.send('agent:approval', { id, ...info })
+              })
+          })
+        : askAgent(messages, opts)
+    return run.finally(() => (running = null))
   })
 
   // Set app user model id for windows

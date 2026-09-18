@@ -47,16 +47,19 @@ const stripTable = (text) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-async function chat(messages, model, onStep, onDelta, signal) {
-  const history = toHistory(messages)
+// prompt + ความจำกลาง ใช้ร่วมกันทั้ง loop ที่เขียนเองและฝั่ง SDK
+export async function buildSystem() {
   const saved = await (await store()).memories()
-  const system = saved.length
-    ? `${SYSTEM_PROMPT}
+  if (!saved.length) return SYSTEM_PROMPT
+  return `${SYSTEM_PROMPT}
 
 # ความจำกลาง (ผู้ใช้เคยสั่งให้จำไว้ ใช้ได้เลยไม่ต้องถามซ้ำ)
 ${saved.map((m) => `- ${m}`).join('\n')}`
-    : SYSTEM_PROMPT
-  const convo = [{ role: 'system', content: system }, ...history]
+}
+
+async function chat(messages, model, onStep, onDelta, signal) {
+  const history = toHistory(messages)
+  const convo = [{ role: 'system', content: await buildSystem() }, ...history]
   let step = null
 
   // ponytail: ไม่จำกัดจำนวนรอบตามที่ผู้ใช้สั่ง — โมเดลวนไม่จบได้และค่า token โตทุกรอบ

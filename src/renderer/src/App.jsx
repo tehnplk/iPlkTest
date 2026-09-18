@@ -116,6 +116,8 @@ function App() {
   const [models, setModels] = useState([])
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
   const [model, setModel] = useState(() => localStorage.getItem('model') || '')
+  const [engine, setEngine] = useState(() => localStorage.getItem('engine') || 'loop')
+  const [approval, setApproval] = useState(null)
   const endRef = useRef(null)
 
   const active = convos.find((c) => c.id === activeId)
@@ -149,6 +151,14 @@ function App() {
   )
 
   useEffect(() => window.api.agent.onDelta((t) => setStreamed((prev) => prev + t)), [])
+
+  // ฝั่ง SDK จะหยุดถามก่อนรันคำสั่งเสี่ยง
+  useEffect(() => window.api.agent.onApproval(setApproval), [])
+
+  const answerApproval = (ok) => {
+    window.api.agent.approve(approval.id, ok)
+    setApproval(null)
+  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -191,7 +201,7 @@ function App() {
     let reply
     try {
       // reasoning_details ของข้อความเก่าถูกส่งกลับไปด้วย โมเดลจะคิดต่อจากเดิม
-      reply = await window.api.agent.send(sent, model)
+      reply = await window.api.agent.send(sent, model, engine)
     } catch (err) {
       reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
     }
@@ -201,6 +211,7 @@ function App() {
     setBusy(false)
     setRunningSql('')
     setStreamed('')
+    setApproval(null)
     await window.api.convos.save({ id: activeId, title, messages })
   }
 
@@ -226,6 +237,17 @@ function App() {
       <main className="chat">
         <header className="chat-header">
           <span className="title">{active?.title ?? ''}</span>
+          <select
+            value={engine}
+            title="loop = ที่เขียนเอง, sdk = @openai/agents"
+            onChange={(e) => {
+              setEngine(e.target.value)
+              localStorage.setItem('engine', e.target.value)
+            }}
+          >
+            <option value="loop">loop</option>
+            <option value="sdk">sdk</option>
+          </select>
           <select
             value={model}
             onChange={(e) => {
@@ -269,6 +291,18 @@ function App() {
               )}
             </div>
           ))}
+          {approval && (
+            <div className="msg assistant approval">
+              <div>ขออนุมัติรัน {approval.name}</div>
+              <pre className="sql">{approval.args}</pre>
+              <div className="approval-buttons">
+                <button onClick={() => answerApproval(true)}>อนุมัติ</button>
+                <button className="reject" onClick={() => answerApproval(false)}>
+                  ไม่อนุมัติ
+                </button>
+              </div>
+            </div>
+          )}
           {busy && (
             <div className="msg assistant">
               {streamed ? (

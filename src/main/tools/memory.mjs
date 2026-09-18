@@ -1,5 +1,3 @@
-import { store } from '../store.mjs'
-
 // ความจำเก็บใน PGlite ก้อนเดียวกับประวัติการสนทนา (ตาราง memory)
 export const memoryTool = {
   name: 'memory',
@@ -17,6 +15,8 @@ export const memoryTool = {
     required: ['action', 'text']
   },
   run: async (args) => {
+    // import ตอนใช้จริง เพราะ store.mjs ผูกกับ electron (ไฟล์นี้จะได้ยัง import ด้วย node ได้)
+    const { store } = await import('../store.mjs')
     const db = await store()
     return args.action === 'forget' ? db.forget(args.text) : db.remember(args.text)
   }
