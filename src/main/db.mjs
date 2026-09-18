@@ -32,6 +32,11 @@ export async function openDb(dataDir) {
       )
     },
 
+    // เปิดแอปทีไรก็สร้างห้องใหม่ ถ้าไม่เก็บกวาดห้องเปล่าจะรกไปเรื่อยๆ
+    purgeEmpty: async () => {
+      await pg.query("DELETE FROM conversations WHERE messages = '[]'::jsonb")
+    },
+
     remove: async (id) => {
       await pg.query('DELETE FROM conversations WHERE id = $1', [id])
     },

@@ -43,6 +43,7 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   const db = await store()
+  await db.purgeEmpty()
   ipcMain.handle('convos:list', () => db.list())
   ipcMain.handle('convos:create', (_e, title) => db.create(title))
   ipcMain.handle('convos:save', (_e, convo) => db.save(convo))

@@ -21,6 +21,14 @@ assert.deepEqual(saved.messages, [{ role: 'user', content: 'สวัสดี' 
 await db.remove(second)
 assert.equal((await db.list()).length, 1)
 
+// ห้องเปล่าถูกเก็บกวาดตอนเปิดแอป ห้องที่มีข้อความต้องอยู่ครบ
+const empty = await db.create('ห้องเปล่า')
+assert.equal((await db.list()).length, 2)
+await db.purgeEmpty()
+const left = await db.list()
+assert.equal(left.length, 1)
+assert.ok(!left.some((c) => c.id === empty))
+
 // --- ความจำกลาง ---
 assert.deepEqual(await db.memories(), [])
 

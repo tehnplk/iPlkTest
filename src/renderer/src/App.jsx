@@ -119,17 +119,18 @@ function App() {
   const [engine, setEngine] = useState(() => localStorage.getItem('engine') || 'loop')
   const [approval, setApproval] = useState(null)
   const endRef = useRef(null)
+  const started = useRef(false)
 
   const active = convos.find((c) => c.id === activeId)
 
+  // เปิดแอปทีไรเริ่มที่ห้องใหม่เสมอ ของเก่ายังอยู่ในรายการให้กดกลับไปดูได้
   useEffect(() => {
+    if (started.current) return // StrictMode ในโหมด dev เรียก effect ซ้ำ กันไม่ให้สร้างสองห้อง
+    started.current = true
     window.api.convos.list().then(async (rows) => {
-      if (rows.length === 0) {
-        const id = await window.api.convos.create(NEW_TITLE)
-        rows = [{ id, title: NEW_TITLE, messages: [] }]
-      }
-      setConvos(rows)
-      setActiveId(rows[0].id)
+      const id = await window.api.convos.create(NEW_TITLE)
+      setConvos([{ id, title: NEW_TITLE, messages: [] }, ...rows])
+      setActiveId(id)
     })
   }, [])
 
