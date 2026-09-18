@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { openDb } from './db.mjs'
+import { store } from './store.mjs'
 import { askAgent, closeAgent, MODELS } from './agent.mjs'
 
 function createWindow() {
@@ -41,7 +41,7 @@ function createWindow() {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
-  const db = await openDb(join(app.getPath('userData'), 'pgdata'))
+  const db = await store()
   ipcMain.handle('convos:list', () => db.list())
   ipcMain.handle('convos:create', (_e, title) => db.create(title))
   ipcMain.handle('convos:save', (_e, convo) => db.save(convo))

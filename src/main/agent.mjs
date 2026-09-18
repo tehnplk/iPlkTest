@@ -3,11 +3,13 @@ import OpenAI from 'openai'
 import { db, sqlTool } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
+import { memoryTool } from './tools/memory.mjs'
 import { toHistory } from './history.mjs'
+import { store } from './store.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
 
 // เพิ่ม tool ใหม่ = เขียนไฟล์ใน tools/ แล้วมาต่อท้ายรายการนี้
-const TOOL_LIST = [sqlTool, excelTool, apiTool]
+const TOOL_LIST = [sqlTool, excelTool, apiTool, memoryTool]
 const TOOLS = TOOL_LIST.map(({ name, description, parameters }) => ({
   type: 'function',
   function: { name, description, parameters }
@@ -45,7 +47,14 @@ const stripTable = (text) =>
 
 async function chat(messages, model, onStep, onDelta, signal) {
   const history = toHistory(messages)
-  const convo = [{ role: 'system', content: SYSTEM_PROMPT }, ...history]
+  const saved = await (await store()).memories()
+  const system = saved.length
+    ? `${SYSTEM_PROMPT}
+
+# ความจำกลาง (ผู้ใช้เคยสั่งให้จำไว้ ใช้ได้เลยไม่ต้องถามซ้ำ)
+${saved.map((m) => `- ${m}`).join('\n')}`
+    : SYSTEM_PROMPT
+  const convo = [{ role: 'system', content: system }, ...history]
   let step = null
 
   // ponytail: ไม่จำกัดจำนวนรอบตามที่ผู้ใช้สั่ง — โมเดลวนไม่จบได้และค่า token โตทุกรอบ
