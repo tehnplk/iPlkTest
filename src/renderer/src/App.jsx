@@ -261,6 +261,7 @@ function App() {
               )}
               {/* คำตอบ agent เป็น markdown (react-markdown escape ให้ ไม่ต้องยุ่งกับ innerHTML) */}
               {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
+              {m.verified && <div className="verified">✓ ตรวจตัวเลขกับผลลัพธ์แล้ว</div>}
               {/^[⏹⚠]/.test(m.content ?? '') && !busy && (
                 <button className="continue" onClick={() => submit('continue')}>
                   ▶ ทำต่อ

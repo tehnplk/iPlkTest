@@ -6,7 +6,9 @@ import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
 import { toHistory } from './history.mjs'
 import { store } from './store.mjs'
+import { needsCheck } from './check.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
+import VERIFY_PROMPT from './verify.md?raw'
 
 // เพิ่ม tool ใหม่ = เขียนไฟล์ใน tools/ แล้วมาต่อท้ายรายการนี้
 const TOOL_LIST = [sqlTool, excelTool, apiTool, memoryTool]
@@ -94,6 +96,10 @@ ${saved.map((m) => `- ${m}`).join('\n')}`
         })
       )
       for (const d of done) {
+        // ได้ 0 แถวมักแปลว่าคีย์ join หรือเงื่อนไขผิด ไม่ใช่ว่าไม่มีข้อมูลจริง — บอกให้โมเดลเช็คก่อนสรุป
+        if (d.result?.rowCount === 0 && d.result.columns?.length)
+          d.result.hint =
+            'ได้ 0 แถว ให้ตรวจคีย์ join เงื่อนไข และค่ารหัสที่ใช้ ก่อนสรุปว่าไม่มีข้อมูล'
         step = { sql: d.stmt, result: d.result }
         convo.push({ role: 'tool', tool_call_id: d.call.id, content: JSON.stringify(d.result) })
       }
@@ -103,6 +109,38 @@ ${saved.map((m) => `- ${m}`).join('\n')}`
       throw err
     }
   }
+}
+
+// ปิดได้ถ้าไม่อยากเสียเวลา/โทเคนอีกรอบต่อคำตอบหนึ่งครั้ง
+const VERIFY = true
+
+// ให้โมเดลตรวจคำตอบตัวเองกับผลลัพธ์จริงอีกรอบ คืนคำตอบที่แก้แล้ว หรือ null ถ้าผ่าน
+async function verifyAnswer({ question, step, answer, model, signal }) {
+  const res = await openai.chat.completions.create(
+    {
+      model,
+      max_tokens: MAX_TOKENS,
+      // ต้องให้มันคิด ไม่งั้นบวกเลขพลาดพอๆ กับตัวที่ถูกตรวจ
+      reasoning: { enabled: true },
+      messages: [
+        { role: 'system', content: VERIFY_PROMPT },
+        {
+          role: 'user',
+          content: `คำถาม: ${question}
+
+SQL: ${step.sql}
+
+ผลลัพธ์จริง: ${JSON.stringify(step.result).slice(0, 3000)}
+
+คำตอบที่ร่างไว้:
+${answer}`
+        }
+      ]
+    },
+    { signal }
+  )
+  const out = res.choices[0].message.content?.trim() ?? ''
+  return !out || out.startsWith('OK') ? null : out
 }
 
 // จุดเดียวที่ main เรียกใช้: ส่งบทสนทนาเข้าไป ได้ข้อความตอบกลับพร้อม step ที่รันไป
@@ -116,13 +154,37 @@ export async function askAgent(messages, { model, onStep, onDelta, signal } = {}
     signal
   )
   const { role, content, reasoning_details } = msg
-  const clean = step?.result?.rows?.length && content ? stripTable(content) : content
+  let clean = step?.result?.rows?.length && content ? stripTable(content) : content
+
+  // ตรวจเฉพาะคำตอบที่อ้างข้อมูลจริง ถ้าไม่ได้ query อะไรมาก็ไม่มีอะไรให้เทียบ
+  let verified = false
+  // ตรวจเฉพาะตอนที่คำตอบมีตัวเลขที่ไม่ได้ยกมาจากผลลัพธ์ตรงๆ (รอบตรวจกินเวลาราว 20 วิ)
+  if (
+    VERIFY &&
+    clean &&
+    step?.result &&
+    !step.result.error &&
+    !signal?.aborted &&
+    needsCheck(clean, step.result)
+  ) {
+    const fixed = await verifyAnswer({
+      question: messages.filter((m) => m.role === 'user').at(-1)?.content ?? '',
+      step,
+      answer: clean,
+      model: MODELS.includes(model) ? model : MODELS[0],
+      signal
+    }).catch(() => null)
+    if (fixed) clean = fixed
+    verified = true
+  }
+
   // ห้ามเอา reasoning มาโชว์แทนคำตอบ มันคือความคิดดิบ ๆ ที่ยังไม่เรียบเรียง
   return {
     role,
     content: clean || '⚠ token หมดไปกับการคิดจนยังไม่ได้ตอบ — กด "ทำต่อ" หรือถามให้แคบลง',
     reasoning_details,
-    step
+    step,
+    verified
   }
 }
 
