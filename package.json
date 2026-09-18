@@ -22,10 +22,12 @@
     "@electric-sql/pglite": "^0.5.8",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
+    "@openai/agents": "^0.18.0",
     "exceljs": "^4.4.0",
     "mysql2": "^3.24.4",
     "openai": "^7.18.0",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^2.1.0",
