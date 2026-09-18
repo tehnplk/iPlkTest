@@ -17,7 +17,8 @@ const runTool = (name, args, signal) =>
     downloadsDir: app.getPath('downloads')
   })
 
-const MODEL = 'qwen/qwen3.7-flash'
+// รายชื่อที่ให้เลือกในหน้าจอ ตัวแรกคือค่าเริ่มต้น
+export const MODELS = ['qwen/qwen3.7-flash', 'z-ai/glm-5.3-flash', 'deepseek/deepseek-v4.1-flash']
 // reasoning กินโควตานี้ก่อน ตั้งต่ำไปจะได้แต่ความคิดแล้วไม่เหลือ token ให้ตอบ
 // (OpenRouter กันเครดิตล่วงหน้าตามค่านี้ด้วย เครดิตน้อยแล้วเจอ 402 ให้ลดลง)
 const MAX_TOKENS = 8192
@@ -37,7 +38,7 @@ const stripTable = (text) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-async function chat(messages, onStep, onDelta, signal) {
+async function chat(messages, model, onStep, onDelta, signal) {
   const history = toHistory(messages)
   const convo = [{ role: 'system', content: SYSTEM_PROMPT }, ...history]
   let step = null
@@ -50,7 +51,7 @@ async function chat(messages, onStep, onDelta, signal) {
       // helper ของ SDK ประกอบ delta กลับเป็น message ก้อนเดียวให้เอง (tool_calls/reasoning_details ครบ)
       const stream = openai.chat.completions.stream(
         {
-          model: MODEL,
+          model,
           max_tokens: MAX_TOKENS,
           reasoning: { enabled: true },
           tools: TOOLS,
@@ -87,8 +88,15 @@ async function chat(messages, onStep, onDelta, signal) {
 }
 
 // จุดเดียวที่ main เรียกใช้: ส่งบทสนทนาเข้าไป ได้ข้อความตอบกลับพร้อม step ที่รันไป
-export async function askAgent(messages, { onStep, onDelta, signal } = {}) {
-  const { msg, step } = await chat(messages, onStep, onDelta, signal)
+export async function askAgent(messages, { model, onStep, onDelta, signal } = {}) {
+  // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
+  const { msg, step } = await chat(
+    messages,
+    MODELS.includes(model) ? model : MODELS[0],
+    onStep,
+    onDelta,
+    signal
+  )
   const { role, content, reasoning_details } = msg
   const clean = step?.result?.rows?.length && content ? stripTable(content) : content
   // ห้ามเอา reasoning มาโชว์แทนคำตอบ มันคือความคิดดิบ ๆ ที่ยังไม่เรียบเรียง

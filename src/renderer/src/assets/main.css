@@ -106,9 +106,30 @@ body {
 }
 
 .chat-header {
-  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
+}
+
+.chat-header .title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-header select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .messages {

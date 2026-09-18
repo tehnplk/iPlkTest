@@ -10,7 +10,8 @@ const api = {
   },
   openFile: (path) => ipcRenderer.invoke('file:open', path),
   agent: {
-    send: (messages) => ipcRenderer.invoke('agent:send', messages),
+    send: (messages, model) => ipcRenderer.invoke('agent:send', messages, model),
+    models: () => ipcRenderer.invoke('agent:models'),
     stop: () => ipcRenderer.invoke('agent:stop'),
     onStep: (cb) => {
       const handler = (_e, step) => cb(step)

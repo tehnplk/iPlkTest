@@ -95,6 +95,9 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [runningSql, setRunningSql] = useState('')
   const [streamed, setStreamed] = useState('')
+  const [models, setModels] = useState([])
+  // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
+  const [model, setModel] = useState(() => localStorage.getItem('model') || '')
   const endRef = useRef(null)
 
   const active = convos.find((c) => c.id === activeId)
@@ -107,6 +110,13 @@ function App() {
       }
       setConvos(rows)
       setActiveId(rows[0].id)
+    })
+  }, [])
+
+  useEffect(() => {
+    window.api.agent.models().then((list) => {
+      setModels(list)
+      setModel((cur) => (list.includes(cur) ? cur : list[0]))
     })
   }, [])
 
@@ -163,7 +173,7 @@ function App() {
     let reply
     try {
       // reasoning_details ของข้อความเก่าถูกส่งกลับไปด้วย โมเดลจะคิดต่อจากเดิม
-      reply = await window.api.agent.send(sent)
+      reply = await window.api.agent.send(sent, model)
     } catch (err) {
       reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
     }
@@ -196,7 +206,22 @@ function App() {
       </aside>
 
       <main className="chat">
-        <header className="chat-header">{active?.title ?? ''}</header>
+        <header className="chat-header">
+          <span className="title">{active?.title ?? ''}</span>
+          <select
+            value={model}
+            onChange={(e) => {
+              setModel(e.target.value)
+              localStorage.setItem('model', e.target.value)
+            }}
+          >
+            {models.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </header>
         <div className="messages">
           {active?.messages.length === 0 && <div className="empty">ถาม SQL ของ HOSxP ได้เลย</div>}
           {active?.messages.map((m, i) => (

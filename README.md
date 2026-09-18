@@ -26,12 +26,12 @@ npm run dev
 
 `.env` (ทุกค่าอยู่ฝั่ง main process โมเดลไม่เห็นรหัสผ่าน):
 
-| ตัวแปร | ใช้ทำอะไร |
-|---|---|
-| `MAIN_VITE_OPENROUTER_API_KEY` | คีย์ OpenRouter |
-| `MAIN_VITE_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP |
-| `MAIN_VITE_API_ALLOW` | host ที่ยอมให้ tool `rest_api` เรียก เช่น `api.moph.go.th,*.go.th` (ว่าง = ห้ามทั้งหมด) |
-| `MAIN_VITE_API_TOKEN` | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี) |
+| ตัวแปร                                                          | ใช้ทำอะไร                                                                               |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `MAIN_VITE_OPENROUTER_API_KEY`                                  | คีย์ OpenRouter                                                                         |
+| `MAIN_VITE_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP                                                                         |
+| `MAIN_VITE_API_ALLOW`                                           | host ที่ยอมให้ tool `rest_api` เรียก เช่น `api.moph.go.th,*.go.th` (ว่าง = ห้ามทั้งหมด) |
+| `MAIN_VITE_API_TOKEN`                                           | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี)                                                  |
 
 > ค่าใน `.env` ถูก inline เข้า bundle ตอน build — อย่าแจกไฟล์ที่ build พร้อมคีย์
 

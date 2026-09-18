@@ -3,7 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { openDb } from './db.mjs'
-import { askAgent, closeAgent } from './agent.mjs'
+import { askAgent, closeAgent, MODELS } from './agent.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -50,12 +50,14 @@ app.whenReady().then(async () => {
   let running = null
   ipcMain.handle('agent:stop', () => running?.abort())
   ipcMain.handle('file:open', (_e, path) => shell.openPath(path))
+  ipcMain.handle('agent:models', () => MODELS)
 
   // ส่ง messages ทั้งก้อนกลับไป (รวม reasoning_details เดิม) ให้โมเดลคิดต่อจากของเก่าได้
-  ipcMain.handle('agent:send', async (e, messages) => {
+  ipcMain.handle('agent:send', async (e, messages, model) => {
     running = new AbortController()
     // onStep = sql ที่กำลังรัน, onDelta = ตัวอักษรที่โมเดลพิมพ์ ส่งให้ UI โชว์สดๆ
     return askAgent(messages, {
+      model,
       onStep: (s) => e.sender.send('agent:step', s),
       onDelta: (d) => e.sender.send('agent:delta', d),
       signal: running.signal
