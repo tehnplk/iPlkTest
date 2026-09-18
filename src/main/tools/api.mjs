@@ -69,9 +69,9 @@ export function openApi({ allow = '', token = '' }) {
   }
 }
 
-// อนุญาตเฉพาะ host ที่ตั้งไว้ใน .env (MAIN_VITE_API_ALLOW) token ก็อยู่ฝั่งแอป
+// ค่าเริ่มต้นเปิดให้เรียกได้ทุก host ตามที่ผู้ใช้สั่ง — ใส่รายชื่อใน MAIN_VITE_API_ALLOW เมื่อต้องการจำกัด
 const callApi = openApi({
-  allow: import.meta.env?.MAIN_VITE_API_ALLOW || '',
+  allow: import.meta.env?.MAIN_VITE_API_ALLOW || '*',
   token: import.meta.env?.MAIN_VITE_API_TOKEN || ''
 })
 

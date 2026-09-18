@@ -50,8 +50,9 @@ assert.ok((await call({ url: 'file:///etc/passwd' })).error)
 assert.ok((await call({ url: `${base}/x`, method: 'TRACE' })).error)
 assert.ok((await call({ url: 'ไม่ใช่ url' })).error)
 
-// ไม่ได้ตั้ง allowlist = เรียกไม่ได้เลย
-assert.ok((await openApi({})({ url: `${base}/ping` })).error)
+// ไม่ได้ตั้ง allowlist = ค่าเริ่มต้นของแอปคือ '*' (เรียกได้) แต่ตัวฟังก์ชันเองยังต้องได้รับค่ามา
+assert.ok((await openApi({})({ url: `${base}/ping` })).error, 'ส่ง allow ว่างมา = ห้าม')
+assert.equal((await openApi({ allow: '*' })({ url: `${base}/ping` })).status, 200)
 
 server.close()
 console.log('api ok')
