@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
-import { checkSql, openSql } from '../src/main/tools/sql.mjs'
+import {
+  checkSql,
+  openSql,
+  tablesSql,
+  columnsSql,
+  listTool,
+  schemaTool
+} from '../src/main/tools/sql.mjs'
 
 // อ่านได้
 for (const ok of [
@@ -38,3 +45,18 @@ await assert.rejects(db.query('SELECT 1'), 'ต่อไม่ได้ควร
 await db.close()
 
 console.log('sql ok')
+
+// tool สำรวจสร้าง SQL เองจากพารามิเตอร์ ต้องได้คำสั่งที่ checkSql ยอมและชื่อถูกครอบ backtick
+assert.equal(tablesSql('lab'), "SHOW TABLES LIKE '%lab%'")
+assert.equal(tablesSql(''), 'SHOW TABLES')
+assert.equal(columnsSql('patient'), 'SHOW COLUMNS FROM `patient`')
+assert.equal(checkSql(tablesSql('lab')), null)
+assert.equal(checkSql(columnsSql('patient')), null)
+
+// อักขระนอก a-z 0-9 _ $ ต้องถูกปัดตั้งแต่ชั้น tool ไม่ให้หลุดไปต่อสตริง SQL
+for (const bad of ["pat'ient", 'patient; drop', 'ตาราง', 'a b', '%']) {
+  assert.match((await schemaTool.run({ table: bad })).error, /ชื่อตารางไม่ถูกต้อง/)
+  assert.match((await listTool.run({ keyword: bad })).error, /คำค้นใส่ได้แค่/)
+}
+
+console.log('sql tools ok')

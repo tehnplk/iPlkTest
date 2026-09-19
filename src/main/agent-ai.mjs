@@ -3,7 +3,7 @@
 // approval เป็นฟีเจอร์ในตัว (toolApproval) ไม่ต้องเขียนลูปเอง
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
-import { db, sqlTool, isTemp } from './tools/sql.mjs'
+import { db, listTool, schemaTool, queryTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
@@ -44,7 +44,12 @@ export const closeAgent = () => db.close()
 
 // คำสั่งที่ควรถามก่อนรัน: ดึงทั้งตารางแบบไม่จำกัดจำนวน
 const risky = (name, input = {}) =>
-  name === 'sql' && /^\s*select\s+\*/i.test(input.sql ?? '') && !/\blimit\b/i.test(input.sql ?? '')
+  name === 'query_data' &&
+  /^\s*select\s+\*/i.test(input.sql ?? '') &&
+  !/\blimit\b/i.test(input.sql ?? '')
+
+// tool สำรวจ (หาชื่อตาราง/ดูคอลัมน์) ไม่ใช่ผลลัพธ์ที่ผู้ใช้อยากเห็นเป็นตารางบนจอ
+const EXPLORE = ['list_table_name', 'get_table_schema']
 
 // JSON schema เดิมใช้ได้เลยผ่าน jsonSchema() ไม่ต้องเขียน zod ใหม่
 const wrap = (t, ctx) =>
@@ -70,7 +75,9 @@ export async function askAgentAi(
     instructions,
     stopWhen: isStepCount(30),
     tools: {
-      sql: wrap(sqlTool, { downloadsDir }),
+      list_table_name: wrap(listTool, { downloadsDir }),
+      get_table_schema: wrap(schemaTool, { downloadsDir }),
+      query_data: wrap(queryTool, { downloadsDir }),
       export_excel: wrap(excelTool, { downloadsDir }),
       rest_api: wrap(apiTool, { downloadsDir }),
       memory: wrap(memoryTool, { downloadsDir }),
@@ -84,6 +91,7 @@ export async function askAgentAi(
   const convo = messages.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content }))
 
   let step = null
+  let lastTool = ''
   // คำสั่งสำรวจ (DESCRIBE/SHOW) ไม่ควรกลายเป็นตารางที่โชว์ให้ผู้ใช้ ถ้ามี query จริงให้ใช้อันนั้น
   let dataStep = null
   const script = []
@@ -98,13 +106,18 @@ export async function askAgentAi(
       if (part.type === 'text-delta') onDelta?.(part.text ?? '')
       if (part.type === 'tool-call') {
         const sql = part.input?.sql
-        onStep?.({ sql: sql ?? `${part.toolName}: ${Object.values(part.input ?? {}).join(' ')}` })
-        step = { sql: sql ?? part.toolName, result: null }
+        // tool ที่ไม่ได้รับ sql (หาชื่อตาราง/ดูคอลัมน์/เขียนไฟล์) ต้องมีป้ายบอกว่าทำอะไรกับอะไร
+        // ไม่งั้นช่องบนจอขึ้นแค่ชื่อ tool ลอยๆ
+        const label = sql ?? `${part.toolName}: ${Object.values(part.input ?? {}).join(' ')}`
+        onStep?.({ sql: label })
+        step = { sql: label, result: null }
+        lastTool = part.toolName
         if (isTemp(sql) && !script.includes(sql)) script.push(sql)
       }
       if (part.type === 'tool-result') {
         step = { sql: step?.sql ?? '', result: part.output }
-        if (!/^\s*(show|desc|describe|explain)\b/i.test(step.sql)) dataStep = step
+        if (!EXPLORE.includes(lastTool) && !/^\s*(show|desc|describe|explain)\b/i.test(step.sql))
+          dataStep = step
       }
       // tool พังหรือถูกปฏิเสธไม่ได้มาเป็น tool-result — ไม่ดักไว้ result จะค้างเป็น null แล้วหน้าจอโชว์ error ว่างๆ
       if (part.type === 'tool-error')

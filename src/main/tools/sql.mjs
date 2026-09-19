@@ -107,9 +107,62 @@ export const db = openSql({
   database: env('DB_NAME')
 })
 
-export const sqlTool = {
-  name: 'sql',
-  description: `รัน SQL กับฐานข้อมูล HOSxP จริง (MySQL/MariaDB) ทีละคำสั่ง
+// ชื่อตาราง/คำค้นของ HOSxP เป็น ascii ล้วน — กันอักขระอื่นไว้ก็ไม่ต้องหนี quote ให้ยุ่ง
+const NAME = /^[A-Za-z0-9_$]+$/
+
+export const tablesSql = (keyword = '') =>
+  keyword ? `SHOW TABLES LIKE '%${keyword}%'` : 'SHOW TABLES'
+export const columnsSql = (table) => `SHOW COLUMNS FROM \`${table}\``
+
+export const listTool = {
+  name: 'list_table_name',
+  description: `หาชื่อตารางในฐาน HOSxP ด้วยคำค้น (ฐานนี้มีหลายพันตาราง ห้ามเดาชื่อเอง)
+เริ่มจาก tool นี้เสมอก่อนเขียน query จริง เร็วไม่ถึงวินาที เรียกหลายคำค้นพร้อมกันในรอบเดียวได้
+ไม่ใส่คำค้น = ได้ทั้งฐาน ซึ่งเกิน ${MAX_ROWS} แถวแน่ๆ ให้ใส่คำค้นเสมอ
+ไม่เจอ = โรงพยาบาลนี้ไม่ได้ใช้ตารางนั้น ให้ลองคำอื่น อย่าเดาชื่อแล้ว query ไปเลย`,
+  parameters: {
+    type: 'object',
+    properties: {
+      keyword: {
+        type: 'string',
+        description:
+          'คำค้นอังกฤษหรือตัวย่อที่ HOSxP ใช้ เช่น lab, drug, diag, visit, person, opd, ipd, screen (a-z 0-9 _ เท่านั้น)'
+      }
+    },
+    required: ['keyword']
+  },
+  run: (args, signal) => {
+    const kw = (args.keyword ?? '').trim()
+    if (kw && !NAME.test(kw))
+      return { error: 'คำค้นใส่ได้แค่ a-z 0-9 _ ($) เช่น lab หรือ opd_visit' }
+    return db.query(tablesSql(kw), signal)
+  }
+}
+
+export const schemaTool = {
+  name: 'get_table_schema',
+  description: `ดูคอลัมน์ทั้งหมดของตารางเดียว (Field/Type/Null/Key/Default/Extra)
+ต้องเรียกยืนยันก่อนเขียน query จริงทุกครั้ง อย่าเดาชื่อคอลัมน์
+จะ join สองตารางให้เรียก tool นี้ทั้งสองตารางพร้อมกันในรอบเดียว แล้วเลือกคีย์ที่ชื่อตรงกันจริงๆ`,
+  parameters: {
+    type: 'object',
+    properties: {
+      table: { type: 'string', description: 'ชื่อตารางเดียว เช่น patient (ได้จาก list_table_name)' }
+    },
+    required: ['table']
+  },
+  run: (args, signal) => {
+    const t = (args.table ?? '').trim()
+    if (!NAME.test(t))
+      return { error: 'ชื่อตารางไม่ถูกต้อง ใส่ชื่อเดียวแบบ a-z 0-9 _ เช่น patient' }
+    return db.query(columnsSql(t), signal)
+  }
+}
+
+export const queryTool = {
+  name: 'query_data',
+  description: `รัน SQL กับฐานข้อมูล HOSxP จริง (MySQL/MariaDB) ทีละคำสั่ง — ใช้ตอนจะดึงข้อมูลจริง
+หาชื่อตารางใช้ list_table_name ดูคอลัมน์ใช้ get_table_schema สองอย่างนั้นเร็วกว่ามาก
 อ่านอย่างเดียว: SELECT/SHOW/DESCRIBE/EXPLAIN/WITH — เขียนได้เฉพาะตารางชั่วคราวชื่อขึ้นต้น tmp_ ซึ่งอยู่ข้าม call ได้
 คืน {columns, rows, rowCount, truncated} rows เป็น array ของ array เรียงตาม columns ทุกค่าเป็น string หรือ null
 ได้ไม่เกิน ${MAX_ROWS} แถว (rowCount คือจำนวนจริง) ถ้าต้องการยอดรวมให้ใช้ COUNT/GROUP BY อย่าไล่นับจาก rows
