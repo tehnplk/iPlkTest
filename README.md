@@ -3,7 +3,7 @@
 แอปเดสก์ท็อปสำหรับคุยกับ AI agent ที่เขียนและรัน SQL บนฐานข้อมูล **HOSxP** ให้ได้เลย
 ถามเป็นภาษาไทย → agent หาตารางเอง เขียน SQL เอง รันจริง แล้วสรุปผลกลับมาเป็นตาราง
 
-Electron + React + Vite (electron-vite) · โมเดลผ่าน OpenRouter
+Electron + React + Vite (electron-vite) · เรียกโมเดลผ่าน LiteLLM proxy (OpenAI-compatible) ไม่ต่อผู้ให้บริการตรง
 
 ## ทำอะไรได้
 
@@ -13,8 +13,9 @@ Electron + React + Vite (electron-vite) · โมเดลผ่าน OpenRoute
 - หลาย query ในรอบเดียวรันขนานผ่าน pool
 - export ผลเป็นไฟล์ Excel (.xlsx) ลง Downloads แล้วกดเปิดจากในแอปได้
 - เรียก REST API ภายนอกได้ทุก host
+- วาดกราฟในหน้าแชทด้วย Chart.js (แท่ง/เส้น/วงกลม/โดนัท/เรดาร์/ปิรามิดประชากร)
+- คำสั่งเสี่ยง (`SELECT *` ทั้งตารางไม่มี `LIMIT`) หยุดถามผู้ใช้ก่อนรัน
 - ตอบแบบ stream, กดหยุดกลางคันได้แล้วสั่ง "ทำต่อ"
-- ตรวจคำตอบซ้ำ: ถ้าคำตอบมีตัวเลขที่ไม่ได้ยกมาจากผลลัพธ์ตรงๆ (คือโมเดลคำนวณเอง) จะให้โมเดลตรวจกับผลลัพธ์จริงอีกรอบแล้วแก้ให้
 - ประวัติการสนทนาเก็บใน PGlite (Postgres ฝังในแอป) ที่ `userData/pgdata`
 
 ## ติดตั้ง
@@ -29,9 +30,10 @@ npm run dev
 
 | ตัวแปร                                                          | ใช้ทำอะไร                                                                                       |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `MAIN_VITE_OPENROUTER_API_KEY`                                  | คีย์ OpenRouter                                                                                 |
+| `MAIN_VITE_LLM_BASE_URL`                                        | base url ของ LiteLLM proxy เช่น `http://localhost:4000/v1`                                      |
+| `MAIN_VITE_LLM_API_KEY`                                         | virtual key ของ proxy (ขึ้นต้น `sk-`) ขอจากผู้ดูแลระบบ                                          |
+| `MAIN_VITE_LLM_MODELS`                                          | ชื่อโมเดลที่ key นี้เรียกได้ คั่นด้วย `,` ตัวแรกเป็นค่าเริ่มต้น                                  |
 | `MAIN_VITE_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP                                                                                 |
-| `MAIN_VITE_API_ALLOW`                                           | จำกัด host ที่ tool `rest_api` เรียกได้ เช่น `api.moph.go.th,*.go.th` (ว่าง = เรียกได้ทุก host) |
 | `MAIN_VITE_API_TOKEN`                                           | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี)                                                          |
 
 > ค่าใน `.env` ถูก inline เข้า bundle ตอน build — อย่าแจกไฟล์ที่ build พร้อมคีย์

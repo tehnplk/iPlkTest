@@ -1,6 +1,7 @@
-// agent ของแอป — Vercel AI SDK + provider ทางการของ OpenRouter
+// agent ของแอป — Vercel AI SDK ยิงผ่าน LiteLLM proxy อย่างเดียว ไม่ต่อ OpenRouter ตรง
+// (proxy คุมคีย์ โควตา และสิทธิ์โมเดลรายคนให้ แอปถือแค่ virtual key ของตัวเอง)
 // approval เป็นฟีเจอร์ในตัว (toolApproval) ไม่ต้องเขียนลูปเอง
-import { createOpenRouter } from '@openrouter/ai-sdk-provider'
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
 import { db, sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
@@ -13,18 +14,19 @@ import SYSTEM_PROMPT from './prompt.md?raw'
 
 const env = (key, fallback = '') => import.meta.env?.[key] ?? process.env[key] ?? fallback
 
-const openrouter = createOpenRouter({
+const llm = createOpenAICompatible({
+  name: 'litellm',
+  baseURL: env('MAIN_VITE_LLM_BASE_URL', 'http://localhost:4000/v1'),
   // ไม่มีคีย์ก็ยังเปิดแอปได้ — จะไปเด้ง 401 ตอนคุยแทน
-  apiKey: env('MAIN_VITE_OPENROUTER_API_KEY', 'missing-api-key')
+  apiKey: env('MAIN_VITE_LLM_API_KEY', 'missing-api-key')
 })
 
-// รายชื่อที่ให้เลือกในหน้าจอ ตัวแรกคือค่าเริ่มต้น
-export const MODELS = [
-  'z-ai/glm-5.3-flash',
-  'qwen/qwen3.7-flash',
-  'upstage/solar-pro4',
-  'deepseek/deepseek-v4.1-flash'
-]
+// ชื่อโมเดลเป็นของ proxy (คนละชุดกับชื่อ OpenRouter) และต่าง key ก็ได้สิทธิ์คนละรายการ
+// ดูของจริงที่ GET /v1/models — ตัวแรกคือค่าเริ่มต้นบนหน้าจอ
+export const MODELS = env('MAIN_VITE_LLM_MODELS', 'flash')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean)
 
 // prompt + ความจำกลางที่ผู้ใช้สั่งให้จำไว้
 export async function buildSystem() {
@@ -57,7 +59,7 @@ export async function askAgentAi(
 ) {
   const agent = new ToolLoopAgent({
     // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
-    model: openrouter(MODELS.includes(model) ? model : MODELS[0]),
+    model: llm(MODELS.includes(model) ? model : MODELS[0]),
     instructions,
     stopWhen: isStepCount(30),
     tools: {
