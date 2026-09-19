@@ -64,7 +64,7 @@ export async function askAgentAi(
       }
       if (part.type === 'tool-result') {
         step = { sql: step?.sql ?? '', result: part.output }
-        if (!/^\s*(show|desc|describe|explain)/i.test(step.sql)) dataStep = step
+        if (!/^\s*(show|desc|describe|explain)\b/i.test(step.sql)) dataStep = step
       }
     }
     return result
