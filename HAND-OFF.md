@@ -112,12 +112,64 @@ backspace (0x08) ฝังลงไฟล์เงียบๆ จน regex เ�
 ใช้ Edit/Write tool กับโค้ดที่มี regex หรือ escape เสมอ อย่าใช้ `python - <<'PY'` / `node -e` แก้ไฟล์
 ถ้าจำเป็นให้เลี่ยงด้วย `String.fromCharCode(92)` และตรวจด้วย `git diff` หลังทุกครั้ง
 
-## คำสั่งที่ใช้บ่อย
+## การทดสอบ
+
+### unit — เร็ว ใช้ระหว่างแก้โค้ด
 
 ```bash
-npm test                 # 9 ไฟล์ ไม่แตะเน็ต ไม่แตะ MySQL (ยกเว้น sql.test)
-npm run build && npm run approval   # ทดสอบทางขออนุมัติผ่านหน้าจอจริง
-npm run build && node test/e2e.mjs 'คำถาม'   # คุยกับแอปจริงหนึ่งรอบ
+npm test          # 9 ไฟล์ ไม่แตะเน็ต ไม่แตะโมเดล (sql.test ต้องมี MySQL)
 ```
 
-e2e ต้องปิดแอปที่เปิดค้างก่อน (PGlite ล็อกโฟลเดอร์ userData ไว้ตัวเดียว)
+`web.test.mjs` กับ `db.test.mjs` แทน `globalThis.fetch` และใช้ PGlite `memory://` เลยรันได้ทุกที่
+
+### e2e — เปิด Electron จริง คุยกับโมเดลจริง query ฐานจริง
+
+ต้องมีก่อน: `.env` ตั้งครบ (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODELS`, `DB_*`),
+LiteLLM proxy รันอยู่, MySQL ต่อได้ และ **ปิดแอปที่เปิดค้างให้หมด**
+(PGlite ล็อกโฟลเดอร์ userData ไว้ตัวเดียว เปิดซ้อนจะพังทันที)
+
+```bash
+npm run build && node test/e2e.mjs 'มีผู้ป่วยทั้งหมดกี่คน ตอบสั้นๆ'
+npm run build && npm run approval        # ทางขออนุมัติ: กดอนุมัติ + กดปฏิเสธ
+```
+
+**ต้อง `npm run build` ทุกครั้งก่อนรัน** — ทั้งสองตัวเปิดจาก `out/` ไม่ใช่ `src/`
+แก้โค้ดแล้วลืม build จะได้ผลของรอบก่อนแบบเงียบๆ (เสียเวลาไปกับเรื่องนี้มาแล้ว)
+
+`e2e.mjs` รับคำถามเป็น argument, ต่อ stdout ของ main process มาให้ด้วย (จะเห็นล็อก `[jev] ...`)
+แล้ว assert ว่า: มีทั้งข้อความผู้ใช้และคำตอบ, คำตอบไม่ว่าง, ไม่ขึ้นต้นด้วย `⚠`
+พิมพ์ SQL ที่ใช้ จำนวนช่องในตาราง และคำตอบเต็มออกมาให้อ่าน ใช้เวลา 10-60 วินาทีต่อคำถาม
+
+### เช็ค UI เฉพาะกิจ — วางสคริปต์ใน `test/` เท่านั้น
+
+เวลาจะตรวจอะไรที่ยังไม่มีเทสต์ (ปุ่มใหม่ ไอคอน แท็บ) ให้เขียนสคริปต์ Playwright ชั่วคราว
+แล้วลบทิ้ง — แต่**ต้องวางไว้ใน `test/`** จะวางใน temp dir ไม่ได้ เพราะ node resolve
+`playwright-core` จากตำแหน่งไฟล์ ไม่ใช่ cwd
+
+```bash
+cat > test/_check.tmp.mjs <<'EOF'
+import { _electron as electron } from 'playwright-core'
+const env = { ...process.env }
+delete env.ELECTRON_RUN_AS_NODE     // ที่ติดมาจาก terminal ของ VSCode ทำให้ไม่เปิดหน้าต่าง
+const app = await electron.launch({ args: ['.'], env })
+app.process().stdout?.on('data', (d) => process.stdout.write(String(d)))
+const win = await app.firstWindow()
+await win.waitForSelector('.composer textarea')
+// ...ตรวจสิ่งที่ต้องการ...
+await win.screenshot({ path: 'shot.png', clip: { x: 0, y: 0, width: 260, height: 220 } })
+await app.close()
+EOF
+node test/_check.tmp.mjs; rm -f test/_check.tmp.mjs
+```
+
+อ่าน class ของไอคอน lucide ได้ตรงๆ (`lucide lucide-archive-restore`) ใช้ยืนยันสถานะ UI
+ได้แม่นกว่าดูภาพ ส่วน `screenshot` ไว้ดูว่าจัดวางออกมาหน้าตาเป็นยังไงจริงๆ
+
+### วัดโมเดล
+
+สคริปต์ quiz 15 คำถามที่ใช้วัดตาราง HOSxP เป็นไฟล์ชั่วคราว ลบไปแล้ว ถ้าจะทำใหม่:
+ยิง `generateText` ต่อโมเดล เทียบ 2 เงื่อนไข (มี/ไม่มี `instructions: prompt.md`)
+แล้วเทียบคำตอบกับเฉลยที่ยืนยันกับฐานแล้ว
+
+**ต้องตั้ง `maxOutputTokens` อย่างน้อย ~400** — ทั้งสามโมเดลเป็น reasoning model
+ตั้ง 40 แล้ว reasoning กินหมด `textTokens: 0` คำตอบว่างเปล่าโดยไม่มี error
