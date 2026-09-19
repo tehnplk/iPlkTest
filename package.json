@@ -26,6 +26,8 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@openai/agents": "^0.18.0",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
+    "ai": "^7.0.107",
     "exceljs": "^4.4.0",
     "mysql2": "^3.24.4",
     "openai": "^7.18.0",

@@ -52,7 +52,7 @@ const ask = async (engine, question) => {
 
 for (const c of CASES) {
   console.log(`\n${'='.repeat(70)}\nคำถาม: ${c.q}   (เกณฑ์: ${c.ต้องมี})`)
-  for (const engine of ['loop', 'sdk']) {
+  for (const engine of ['loop', 'sdk', 'ai']) {
     const r = await ask(engine, c.q)
     const ok = c.expect ? c.expect.test(r.answer.replace(/\s/g, '')) : r.rows > 0
     console.log(

@@ -265,7 +265,7 @@ function App() {
           <span className="title">{active?.title ?? ''}</span>
           <select
             value={engine}
-            title="กลไกที่ใช้คุมรอบคุยกับโมเดล — loop: เขียนเอง มีรอบตรวจคำตอบ / sdk: @openai/agents มีขออนุมัติก่อนรัน"
+            title="กลไกที่คุมรอบคุยกับโมเดล — loop: เขียนเอง มีรอบตรวจคำตอบ / sdk: @openai/agents / ai: Vercel AI SDK (ทั้งสองตัวหลังมีขออนุมัติก่อนรัน)"
             onChange={(e) => {
               setEngine(e.target.value)
               localStorage.setItem('engine', e.target.value)
@@ -273,6 +273,7 @@ function App() {
           >
             <option value="loop">loop (เขียนเอง)</option>
             <option value="sdk">sdk (@openai/agents)</option>
+            <option value="ai">ai (Vercel AI SDK)</option>
           </select>
           <select
             value={model}

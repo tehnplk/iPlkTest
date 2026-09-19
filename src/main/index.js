@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
 import { askAgent, closeAgent, MODELS, buildSystem } from './agent.mjs'
 import { askAgentSdk } from './agent-sdk.mjs'
+import { askAgentAi } from './agent-ai.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -70,23 +71,25 @@ app.whenReady().then(async () => {
       onDelta: (d) => e.sender.send('agent:delta', d),
       signal: running.signal
     }
-    const run =
-      engine === 'sdk'
-        ? askAgentSdk(messages, {
-            ...opts,
-            instructions: await buildSystem(),
-            downloadsDir: app.getPath('downloads'),
-            onApproval: (info) =>
-              new Promise((resolve) => {
-                const id = ++approvals
-                pending.set(id, (ok) => {
-                  pending.delete(id)
-                  resolve(ok)
-                })
-                e.sender.send('agent:approval', { id, ...info })
-              })
+    const extra = {
+      instructions: await buildSystem(),
+      downloadsDir: app.getPath('downloads'),
+      onApproval: (info) =>
+        new Promise((resolve) => {
+          const id = ++approvals
+          pending.set(id, (ok) => {
+            pending.delete(id)
+            resolve(ok)
           })
-        : askAgent(messages, opts)
+          e.sender.send('agent:approval', { id, ...info })
+        })
+    }
+    const run =
+      engine === 'ai'
+        ? askAgentAi(messages, { ...opts, ...extra })
+        : engine === 'sdk'
+          ? askAgentSdk(messages, { ...opts, ...extra })
+          : askAgent(messages, opts)
     return run.finally(() => (running = null))
   })
 
