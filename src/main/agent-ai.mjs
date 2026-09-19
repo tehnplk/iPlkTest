@@ -12,6 +12,7 @@ import { chartTool } from './tools/chart.mjs'
 // ชื่อ tool ที่โมเดลเห็น มาจาก t.name ของแต่ละไฟล์ — เพิ่ม tool ใหม่แก้ที่เดียว
 const TOOLS = [sqlTool, excelTool, apiTool, memoryTool, chartTool]
 import { fit } from './fit.mjs'
+import { toModelMessages } from './history.mjs'
 import { store } from './store.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
 
@@ -77,8 +78,9 @@ export async function askAgentAi(
       risky(toolCall.toolName, toolCall.input) ? 'user-approval' : undefined
   })
 
-  // ส่งบทสนทนาเดิมเป็นข้อความธรรมดา (ยังไม่ได้แนบ tool call ของเทิร์นก่อน เหมือนฝั่ง sdk)
-  const convo = messages.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content }))
+  const convo = toModelMessages(messages)
+  // ทุกอย่างที่งอกหลังจุดนี้คือของเทิร์นนี้ เก็บไว้ให้เทิร์นหน้า replay ต่อ
+  const baseline = convo.length
 
   let step = null
   // คำสั่งสำรวจ (DESCRIBE/SHOW) ไม่ควรกลายเป็นตารางที่โชว์ให้ผู้ใช้ ถ้ามี query จริงให้ใช้อันนั้น
@@ -142,6 +144,10 @@ export async function askAgentAi(
   return {
     role: 'assistant',
     content: await result.text,
+    // ผ่าน JSON รอบหนึ่ง เพราะของนี้ต้องข้าม IPC แล้วลง jsonb — ให้พังตรงนี้ดีกว่าไปพังหลังเปิดแอปใหม่
+    modelMessages: JSON.parse(
+      JSON.stringify([...convo.slice(baseline), ...(await result.responseMessages)])
+    ),
     step: final && script.length ? { ...final, sql: script.join(';\n\n') } : final
   }
 }
