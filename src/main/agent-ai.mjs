@@ -8,9 +8,10 @@ import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
 import { chartTool } from './tools/chart.mjs'
+import { webTool } from './tools/web.mjs'
 
 // ชื่อ tool ที่โมเดลเห็น มาจาก t.name ของแต่ละไฟล์ — เพิ่ม tool ใหม่แก้ที่เดียว
-const TOOLS = [sqlTool, excelTool, apiTool, memoryTool, chartTool]
+const TOOLS = [sqlTool, excelTool, apiTool, memoryTool, chartTool, webTool]
 import { fit } from './fit.mjs'
 import { toModelMessages } from './history.mjs'
 import { store } from './store.mjs'
@@ -50,6 +51,16 @@ export const closeAgent = () => db.close()
 const risky = (name, input = {}) =>
   name === 'sql' && /^\s*select\s+\*/i.test(input.sql ?? '') && !/\blimit\b/i.test(input.sql ?? '')
 
+// ข้อความล่าสุดของผู้ใช้ — เทิร์นเก่าถูก replay มาด้วย เลยต้องไล่จากท้าย
+const lastAsk = (msgs) => {
+  const c = [...msgs].reverse().find((m) => m.role === 'user')?.content
+  if (typeof c === 'string') return c
+  return (c ?? [])
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text)
+    .join(' ')
+}
+
 // JSON schema เดิมใช้ได้เลยผ่าน jsonSchema() ไม่ต้องเขียน zod ใหม่
 const wrap = (t, ctx) =>
   tool({
@@ -68,17 +79,21 @@ export async function askAgentAi(
       'ยังไม่ได้ตั้ง LLM_BASE_URL ใน .env — ใส่ base url ของ LiteLLM proxy เช่น http://localhost:4000/v1 แล้วเปิดแอปใหม่'
     )
 
+  const convo = toModelMessages(messages)
+
   const agent = new ToolLoopAgent({
     // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
     model: llm(MODELS.includes(model) ? model : MODELS[0]),
     instructions,
     stopWhen: isStepCount(30),
-    tools: Object.fromEntries(TOOLS.map((t) => [t.name, wrap(t, { downloadsDir })])),
+    // ask = คำถามผู้ใช้เทิร์นนี้ ส่งให้ tool ใช้ได้ (web_search เอาไปให้ jev คัดผลค้น)
+    tools: Object.fromEntries(
+      TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask: lastAsk(convo) })])
+    ),
     toolApproval: ({ toolCall }) =>
       risky(toolCall.toolName, toolCall.input) ? 'user-approval' : undefined
   })
 
-  const convo = toModelMessages(messages)
   // ทุกอย่างที่งอกหลังจุดนี้คือของเทิร์นนี้ เก็บไว้ให้เทิร์นหน้า replay ต่อ
   const baseline = convo.length
 

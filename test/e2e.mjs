@@ -13,6 +13,8 @@ const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 
 const app = await electron.launch({ args: ['.'], env })
+// log ของ main process ไม่งั้นเวลาเทสต์ล้มจะมองไม่เห็นว่าข้างในเกิดอะไรขึ้น
+app.process().stdout?.on('data', (d) => process.stdout.write(String(d)))
 const win = await app.firstWindow()
 await win.waitForSelector('.composer textarea')
 console.log(ms(), 'เปิดแอปแล้ว:', await win.title())

@@ -44,11 +44,12 @@ function createWindow() {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
   const db = await store()
-  await db.purgeEmpty()
+  await db.purge()
   ipcMain.handle('convos:list', () => db.list())
   ipcMain.handle('convos:create', (_e, title) => db.create(title))
   ipcMain.handle('convos:save', (_e, convo) => db.save(convo))
   ipcMain.handle('convos:delete', (_e, id) => db.remove(id))
+  ipcMain.handle('convos:archive', (_e, id, on) => db.archive(id, on))
 
   // ปุ่มหยุด: ยกเลิกทั้ง request ที่ค้างและ query ที่กำลังรัน
   let running = null

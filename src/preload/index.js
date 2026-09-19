@@ -12,7 +12,8 @@ const api = {
     list: () => ipcRenderer.invoke('convos:list'),
     create: (title) => ipcRenderer.invoke('convos:create', title),
     save: (convo) => ipcRenderer.invoke('convos:save', convo),
-    remove: (id) => ipcRenderer.invoke('convos:delete', id)
+    remove: (id) => ipcRenderer.invoke('convos:delete', id),
+    archive: (id, on) => ipcRenderer.invoke('convos:archive', id, on)
   },
   openFile: (path) => ipcRenderer.invoke('file:open', path),
   agent: {

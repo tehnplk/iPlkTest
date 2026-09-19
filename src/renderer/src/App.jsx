@@ -1,6 +1,7 @@
 import { Component, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import Chart from 'chart.js/auto'
+import { Archive, ArchiveRestore, Check, Trash2 } from 'lucide-react'
 
 const NEW_TITLE = 'การสนทนาใหม่'
 
@@ -233,6 +234,9 @@ function CopyButton({ text }) {
 function App() {
   const [convos, setConvos] = useState([])
   const [activeId, setActiveId] = useState(null)
+  const [tab, setTab] = useState('recent')
+  // id ของห้องที่กดถังขยะไปแล้วหนึ่งครั้ง กำลังรอกดยืนยัน
+  const [confirmId, setConfirmId] = useState(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [runningSql, setRunningSql] = useState('')
@@ -288,8 +292,11 @@ function App() {
     endRef.current?.scrollIntoView({ block: 'end' })
   }, [active?.messages.length, activeId, runningSql, streamed])
 
-  const removeConvo = async (id, title) => {
-    if (!window.confirm(`ลบบทสนทนา "${title}" ?`)) return
+  // กดถังขยะครั้งแรก = ถาม (ไอคอนเปลี่ยนเป็นเครื่องหมายถูกสีแดง) กดซ้ำถึงลบจริง
+  // เอาเมาส์ออกจากแถวแล้วยกเลิกเอง ไม่ต้องมีปุ่มยกเลิก
+  const removeConvo = async (id) => {
+    if (confirmId !== id) return setConfirmId(id)
+    setConfirmId(null)
     await window.api.convos.remove(id)
     const left = convos.filter((c) => c.id !== id)
     setConvos(left)
@@ -303,6 +310,12 @@ function App() {
     const id = await window.api.convos.create(NEW_TITLE)
     setConvos((prev) => [{ id, title: NEW_TITLE, messages: [] }, ...prev])
     setActiveId(id)
+  }
+
+  // เก็บเข้าคลัง = ไม่โดนลบตอนครบ 30 วัน ห้องจะย้ายไปอีกแท็บทันที
+  const toggleArchive = async (id, archived) => {
+    await window.api.convos.archive(id, !archived)
+    setConvos((prev) => prev.map((c) => (c.id === id ? { ...c, archived: !archived } : c)))
   }
 
   const send = (e) => {
@@ -356,30 +369,51 @@ function App() {
         <button className="new-chat" onClick={newConvo}>
           + {NEW_TITLE}
         </button>
-        <div className="convo-list">
-          {convos.map((c) => (
-            <div key={c.id} className={'convo-row' + (c.id === activeId ? ' active' : '')}>
-              <button className="convo" onClick={() => setActiveId(c.id)}>
-                {c.title}
-              </button>
-              <button
-                className="convo-del"
-                title="ลบบทสนทนานี้"
-                onClick={() => removeConvo(c.id, c.title)}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
-                </svg>
-              </button>
-            </div>
+        <div className="convo-tabs">
+          {[
+            ['recent', 'ประวัติแชท'],
+            ['archive', 'คลัง']
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className={'convo-tab' + (tab === key ? ' active' : '')}
+              onClick={() => setTab(key)}
+            >
+              {label} ({convos.filter((c) => !!c.archived === (key === 'archive')).length})
+            </button>
           ))}
+        </div>
+        <div className="convo-list">
+          {tab === 'recent' && <div className="convo-note">เก็บ 30 วัน เกินกำหนดลบอัตโนมัติ</div>}
+          {convos
+            .filter((c) => !!c.archived === (tab === 'archive'))
+            .map((c) => (
+              <div
+                key={c.id}
+                className={'convo-row' + (c.id === activeId ? ' active' : '')}
+                onMouseLeave={() => confirmId === c.id && setConfirmId(null)}
+              >
+                <button className="convo" onClick={() => setActiveId(c.id)}>
+                  {c.title}
+                </button>
+                <button
+                  className={'convo-archive' + (c.archived ? ' on' : '')}
+                  title={
+                    c.archived ? 'เอาออกจากคลัง (กลับไปนับอายุ 30 วัน)' : 'เก็บเข้าคลัง ไม่ลบทิ้ง'
+                  }
+                  onClick={() => toggleArchive(c.id, c.archived)}
+                >
+                  {c.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                </button>
+                <button
+                  className={'convo-del' + (confirmId === c.id ? ' confirm' : '')}
+                  title={confirmId === c.id ? 'กดอีกครั้งเพื่อลบถาวร' : 'ลบบทสนทนานี้'}
+                  onClick={() => removeConvo(c.id)}
+                >
+                  {confirmId === c.id ? <Check size={14} /> : <Trash2 size={14} />}
+                </button>
+              </div>
+            ))}
         </div>
       </aside>
 

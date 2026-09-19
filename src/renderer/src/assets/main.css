@@ -162,6 +162,12 @@ body {
   color: #ff8a8a;
 }
 
+/* รอยืนยันลบ — ค้างให้เห็นแม้เมาส์ยังไม่ชี้ตรงปุ่ม ไม่งั้นกดไปแล้วไม่รู้ว่ากำลังรออะไร */
+.convo-del.confirm {
+  opacity: 1;
+  color: #ff8a8a;
+}
+
 /* right: conversation with agent */
 .chat {
   display: grid;
@@ -563,4 +569,57 @@ body {
   color: #fff;
   cursor: pointer;
   font: inherit;
+}
+
+/* แท็บประวัติแชท / คลัง — ห้องในคลังไม่ถูกลบตอนครบ 30 วัน */
+.convo-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.convo-tab {
+  flex: 1;
+  padding: 5px 4px;
+  font-size: 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.convo-tab.active {
+  background: rgba(127, 127, 127, 0.18);
+  opacity: 1;
+}
+.convo-note {
+  font-size: 11px;
+  opacity: 0.45;
+  padding: 2px 6px 6px;
+}
+/* ซ่อนจนกว่าจะเอาเมาส์ชี้ เหมือนปุ่มลบ จะได้ไม่มีไอคอนเรียงเต็มทุกแถว */
+.convo-archive {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 6px 2px 6px 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.convo-row:hover .convo-archive {
+  opacity: 1;
+}
+
+/* ห้องที่อยู่ในคลังแล้วต้องเห็นตลอด ไม่งั้นแท็บคลังจะว่างเปล่าจนกว่าจะเอาเมาส์ไปชี้ */
+.convo-archive.on {
+  opacity: 0.7;
+}
+
+.convo-archive:hover {
+  color: var(--ink, inherit);
+  opacity: 1;
 }
