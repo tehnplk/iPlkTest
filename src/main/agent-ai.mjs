@@ -92,9 +92,11 @@ export async function askAgentAi(
     content = await result.content
   }
 
+  // ถ้ามี query จริงให้โชว์อันนั้น ไม่ใช่ DESCRIBE ที่บังเอิญเป็นคำสั่งสุดท้าย
+  const final = dataStep ?? step
   return {
     role: 'assistant',
     content: await result.text,
-    step: step && script.length ? { ...step, sql: script.join(';\n\n') } : step
+    step: final && script.length ? { ...final, sql: script.join(';\n\n') } : final
   }
 }
