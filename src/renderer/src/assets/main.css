@@ -523,12 +523,6 @@ body {
   background: #b23b3b;
 }
 
-.verified {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .continue {
   display: block;
   margin-top: 8px;

@@ -3,9 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
-import { askAgent, closeAgent, MODELS, buildSystem } from './agent.mjs'
-import { askAgentSdk } from './agent-sdk.mjs'
-import { askAgentAi } from './agent-ai.mjs'
+import { askAgentAi, closeAgent, MODELS, buildSystem } from './agent-ai.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -56,22 +54,19 @@ app.whenReady().then(async () => {
   ipcMain.handle('file:open', (_e, path) => shell.openPath(path))
   ipcMain.handle('agent:models', () => MODELS)
 
-  // ส่ง messages ทั้งก้อนกลับไป (รวม reasoning_details เดิม) ให้โมเดลคิดต่อจากของเก่าได้
-  // ฝั่ง SDK ถามผู้ใช้ก่อนรันคำสั่งเสี่ยง — รอคำตอบจากหน้าจอ
+  // agent ถามผู้ใช้ก่อนรันคำสั่งเสี่ยง — รอคำตอบจากหน้าจอ
   let approvals = 0
   const pending = new Map()
   ipcMain.handle('agent:approve', (_e, id, ok) => pending.get(id)?.(ok))
 
-  ipcMain.handle('agent:send', async (e, messages, model, engine) => {
+  ipcMain.handle('agent:send', async (e, messages, model) => {
     running = new AbortController()
     // onStep = sql ที่กำลังรัน, onDelta = ตัวอักษรที่โมเดลพิมพ์ ส่งให้ UI โชว์สดๆ
-    const opts = {
+    const run = askAgentAi(messages, {
       model,
       onStep: (s) => e.sender.send('agent:step', s),
       onDelta: (d) => e.sender.send('agent:delta', d),
-      signal: running.signal
-    }
-    const extra = {
+      signal: running.signal,
       instructions: await buildSystem(),
       downloadsDir: app.getPath('downloads'),
       onApproval: (info) =>
@@ -83,13 +78,7 @@ app.whenReady().then(async () => {
           })
           e.sender.send('agent:approval', { id, ...info })
         })
-    }
-    const run =
-      engine === 'ai'
-        ? askAgentAi(messages, { ...opts, ...extra })
-        : engine === 'sdk'
-          ? askAgentSdk(messages, { ...opts, ...extra })
-          : askAgent(messages, opts)
+    })
     return run.finally(() => (running = null))
   })
 

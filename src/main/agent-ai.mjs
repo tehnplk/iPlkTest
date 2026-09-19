@@ -1,17 +1,40 @@
-// agent เวอร์ชัน Vercel AI SDK — ใช้ tool ชุดเดียวกับอีกสอง engine
-// ต่าง: OpenRouter เป็น provider ทางการ และ approval เป็นฟีเจอร์ในตัว (toolApproval)
+// agent ของแอป — Vercel AI SDK + provider ทางการของ OpenRouter
+// approval เป็นฟีเจอร์ในตัว (toolApproval) ไม่ต้องเขียนลูปเอง
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
-import { sqlTool, isTemp } from './tools/sql.mjs'
+import { db, sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
+import { store } from './store.mjs'
+import SYSTEM_PROMPT from './prompt.md?raw'
 
 const env = (key, fallback = '') => import.meta.env?.[key] ?? process.env[key] ?? fallback
 
 const openrouter = createOpenRouter({
+  // ไม่มีคีย์ก็ยังเปิดแอปได้ — จะไปเด้ง 401 ตอนคุยแทน
   apiKey: env('MAIN_VITE_OPENROUTER_API_KEY', 'missing-api-key')
 })
+
+// รายชื่อที่ให้เลือกในหน้าจอ ตัวแรกคือค่าเริ่มต้น
+export const MODELS = [
+  'z-ai/glm-5.3-flash',
+  'qwen/qwen3.7-flash',
+  'upstage/solar-pro4',
+  'deepseek/deepseek-v4.1-flash'
+]
+
+// prompt + ความจำกลางที่ผู้ใช้สั่งให้จำไว้
+export async function buildSystem() {
+  const saved = await (await store()).memories()
+  if (!saved.length) return SYSTEM_PROMPT
+  return `${SYSTEM_PROMPT}
+
+# ความจำกลาง (ผู้ใช้เคยสั่งให้จำไว้ ใช้ได้เลยไม่ต้องถามซ้ำ)
+${saved.map((m) => `- ${m}`).join('\n')}`
+}
+
+export const closeAgent = () => db.close()
 
 // คำสั่งที่ควรถามก่อนรัน: ดึงทั้งตารางแบบไม่จำกัดจำนวน
 const risky = (name, input = {}) =>
@@ -30,7 +53,8 @@ export async function askAgentAi(
   { instructions, model, downloadsDir, onStep, onDelta, onApproval, signal } = {}
 ) {
   const agent = new ToolLoopAgent({
-    model: openrouter(model),
+    // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
+    model: openrouter(MODELS.includes(model) ? model : MODELS[0]),
     instructions,
     stopWhen: isStepCount(30),
     tools: {
@@ -55,6 +79,9 @@ export async function askAgentAi(
     // v7: stream() คืน promise ต้อง await ก่อนถึงจะได้ fullStream (ตามเอกสารที่มากับแพ็กเกจ)
     const result = await agent.stream({ messages: input, abortSignal: signal })
     for await (const part of result.fullStream) {
+      // fullStream ไม่ throw — API พัง (คีย์ผิด/429/โมเดลหาย) มาเป็น part แล้ว text จะว่างเปล่า
+      // ไม่โยนต่อ = ผู้ใช้เห็นคำตอบว่างโดยไม่รู้ว่าพัง
+      if (part.type === 'error') throw part.error
       if (part.type === 'text-delta') onDelta?.(part.text ?? '')
       if (part.type === 'tool-call') {
         const sql = part.input?.sql
@@ -66,6 +93,11 @@ export async function askAgentAi(
         step = { sql: step?.sql ?? '', result: part.output }
         if (!/^\s*(show|desc|describe|explain)\b/i.test(step.sql)) dataStep = step
       }
+      // tool พังหรือถูกปฏิเสธไม่ได้มาเป็น tool-result — ไม่ดักไว้ result จะค้างเป็น null แล้วหน้าจอโชว์ error ว่างๆ
+      if (part.type === 'tool-error')
+        step = { sql: step?.sql ?? '', result: { error: String(part.error) } }
+      if (part.type === 'tool-output-denied')
+        step = { sql: step?.sql ?? '', result: { error: 'ผู้ใช้ไม่อนุมัติให้รันคำสั่งนี้' } }
     }
     return result
   }

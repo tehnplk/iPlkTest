@@ -116,7 +116,6 @@ function App() {
   const [models, setModels] = useState([])
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
   const [model, setModel] = useState(() => localStorage.getItem('model') || '')
-  const [engine, setEngine] = useState(() => localStorage.getItem('engine') || 'loop')
   const [approval, setApproval] = useState(null)
   const endRef = useRef(null)
   const started = useRef(false)
@@ -213,7 +212,7 @@ function App() {
     let reply
     try {
       // reasoning_details ของข้อความเก่าถูกส่งกลับไปด้วย โมเดลจะคิดต่อจากเดิม
-      reply = await window.api.agent.send(sent, model, engine)
+      reply = await window.api.agent.send(sent, model)
     } catch (err) {
       reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
     }
@@ -264,18 +263,6 @@ function App() {
         <header className="chat-header">
           <span className="title">{active?.title ?? ''}</span>
           <select
-            value={engine}
-            title="กลไกที่คุมรอบคุยกับโมเดล — loop: เขียนเอง มีรอบตรวจคำตอบ / sdk: @openai/agents / ai: Vercel AI SDK (ทั้งสองตัวหลังมีขออนุมัติก่อนรัน)"
-            onChange={(e) => {
-              setEngine(e.target.value)
-              localStorage.setItem('engine', e.target.value)
-            }}
-          >
-            <option value="loop">loop (เขียนเอง)</option>
-            <option value="sdk">sdk (@openai/agents)</option>
-            <option value="ai">ai (Vercel AI SDK)</option>
-          </select>
-          <select
             value={model}
             onChange={(e) => {
               setModel(e.target.value)
@@ -310,7 +297,6 @@ function App() {
               )}
               {/* คำตอบ agent เป็น markdown (react-markdown escape ให้ ไม่ต้องยุ่งกับ innerHTML) */}
               {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
-              {m.verified && <div className="verified">✓ ตรวจตัวเลขกับผลลัพธ์แล้ว</div>}
               {/^[⏹⚠]/.test(m.content ?? '') && !busy && (
                 <button className="continue" onClick={() => submit('continue')}>
                   ▶ ทำต่อ
