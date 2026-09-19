@@ -27,12 +27,16 @@ function ChartBox({ spec }) {
     const radar = spec.type === 'radar'
     // ปิรามิดคือแท่งแนวนอนซ้อนกันสองฝั่ง chart.js ไม่มี type นี้ให้ตรงๆ
     const pyramid = spec.type === 'pyramid'
+    // แท่งซ้อนก็คือ bar ที่เปิด stacked ทั้งสองแกน ต่างกันแค่ทิศ — โมเดลเลือกทิศมาเองแล้ว ไม่ต้องเดาให้
+    const stack = pyramid || spec.type === 'stacked_column' || spec.type === 'stacked_bar'
+    const bar = spec.type === 'bar' || stack
     // ป้ายไทยยาวๆ หรือหมวดเยอะๆ ในแนวตั้งจะถูกหมุนเฉียงแล้วตัดทิ้ง นอนแล้วอ่านได้เต็มทุกป้าย
     const sideways =
       pyramid ||
+      spec.type === 'stacked_bar' ||
       (spec.type === 'bar' && (spec.labels.length > 10 || spec.labels.some((l) => l.length > 12)))
     const chart = new Chart(ref.current, {
-      type: pyramid ? 'bar' : spec.type,
+      type: bar ? 'bar' : spec.type,
       data: {
         labels: spec.labels,
         datasets: spec.datasets.map((d, i) => ({
@@ -47,7 +51,7 @@ function ChartBox({ spec }) {
           borderColor: pie ? SURFACE : SERIES[i],
           // เว้นขอบสีพื้นระหว่างชิ้น กันชิ้นติดกันกลืนเป็นก้อนเดียว
           borderWidth: 2,
-          borderRadius: spec.type === 'bar' || pyramid ? 4 : undefined,
+          borderRadius: bar ? 4 : undefined,
           pointRadius: spec.type === 'line' || radar ? 4 : undefined,
           pointBackgroundColor: SERIES[i],
           fill: radar,
@@ -90,30 +94,37 @@ function ChartBox({ spec }) {
               ? {
                   // แนวนอน: แกนค่าคือ x แกนหมวดคือ y (ปิรามิดซ้อนสองฝั่งเพิ่ม)
                   x: {
-                    stacked: pyramid,
+                    stacked: stack,
                     beginAtZero: true,
                     grid: { color: GRID },
                     ticks: { color: MUTED, callback: (v) => Math.abs(v).toLocaleString() }
                   },
                   // กลุ่มอายุน้อยต้องอยู่ล่างสุดตามแบบปิรามิด (query ส่งมาน้อยไปมาก)
                   y: {
-                    stacked: pyramid,
+                    stacked: stack,
                     reverse: pyramid,
                     grid: { color: GRID },
                     ticks: { color: MUTED }
                   }
                 }
               : {
-                  x: { ticks: { color: MUTED }, grid: { color: GRID } },
-                  y: { ticks: { color: MUTED }, grid: { color: GRID }, beginAtZero: true }
+                  x: { stacked: stack, ticks: { color: MUTED }, grid: { color: GRID } },
+                  y: {
+                    stacked: stack,
+                    ticks: { color: MUTED },
+                    grid: { color: GRID },
+                    beginAtZero: true
+                  }
                 }
       }
     })
     return () => chart.destroy()
   }, [spec])
 
-  // ปิรามิดวางแท่งตามแนวตั้ง กลุ่มเยอะแล้วกล่องสูงคงที่จะบีบจนแท่งบางเป็นเส้น
-  const tall = (spec.type === 'pyramid' || spec.type === 'bar') && spec.labels.length > 10
+  // แท่งแนวนอนเยอะๆ ในกล่องสูงคงที่จะถูกบีบจนบางเป็นเส้น
+  const tall =
+    (spec.type === 'pyramid' || spec.type === 'stacked_bar' || spec.type === 'bar') &&
+    spec.labels.length > 10
   return (
     <div
       className="chart"

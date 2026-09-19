@@ -130,4 +130,39 @@ assert.match(
   /3 คอลัมน์พอดี/
 )
 
+// แท่งซ้อน: ทุกคอลัมน์ค่าต้องกลายเป็นชุดข้อมูล (ไม่ถูกตัดเหลือชุดเดียวแบบวงกลม)
+// และห้ามยุบหางเป็น "อื่นๆ" เพราะจัดอันดับข้ามหลายชุดไม่ได้
+for (const type of ['stacked_column', 'stacked_bar']) {
+  const st = toChart(
+    {
+      columns: ['เดือน', 'บัตรทอง', 'ประกันสังคม', 'ข้าราชการ'],
+      rows: [
+        ['ม.ค.', '120', '30', '20'],
+        ['ก.พ.', '140', '25', '18']
+      ]
+    },
+    type,
+    'ผู้ป่วยนอกรายเดือนแยกตามสิทธิ'
+  )
+  assert.equal(st.chart.type, type)
+  assert.equal(st.chart.datasets.length, 3, type + ' ต้องเก็บทุกชุดย่อยไว้ซ้อนกัน')
+  assert.deepEqual(st.chart.datasets[2], { label: 'ข้าราชการ', data: [20, 18] })
+  assert.deepEqual(st.chart.labels, ['ม.ค.', 'ก.พ.'])
+
+  // ไม่มีค่าติดลบ (ติดลบเป็นเรื่องของ pyramid เท่านั้น)
+  assert.ok(st.chart.datasets.every((d) => d.data.every((v) => v >= 0)))
+
+  // หมวดเยอะแต่หลายชุด ต้องไม่ยุบเป็น "อื่นๆ" ยอดแต่ละชุดจึงยังตรง
+  const many = toChart(
+    {
+      columns: ['แผนก', 'ชาย', 'หญิง'],
+      rows: Array.from({ length: 20 }, (_, i) => [`แผนก${i}`, '5', '7'])
+    },
+    type,
+    'x'
+  )
+  assert.equal(many.chart.labels.length, 20)
+  assert.ok(!many.chart.labels.some((l) => /^อื่นๆ/.test(l)))
+}
+
 console.log('chart ok')
