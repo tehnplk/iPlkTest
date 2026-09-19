@@ -2,8 +2,10 @@ import { db } from './sql.mjs'
 
 // กราฟที่มีจุดเยอะกว่านี้อ่านไม่รู้เรื่อง ให้ไป GROUP BY มาใหม่
 const MAX_POINTS = 50
-// เกินนี้สีเริ่มวน ก้อนที่เหลือยุบเป็น "อื่นๆ" (วงกลมเท่านั้น แท่ง/เส้นยาวกว่านี้ได้)
+// เกินนี้สีเริ่มวน ก้อนที่เหลือยุบเป็น "อื่นๆ"
 const MAX_SLICES = 8
+// แท่งชุดเดียวเกินนี้ ป้ายเบียดกันจนอ่านไม่ออกและหางที่ติดศูนย์ก็ไม่ได้บอกอะไร ยุบเหมือนกัน
+const MAX_BARS = 15
 const TYPES = ['bar', 'line', 'pie', 'doughnut', 'radar', 'pyramid']
 // radar อ่านออกแค่ตอนแกนไม่เยอะ เกินนี้เส้นทับกันจนมั่ว
 const MAX_AXES = 12
@@ -53,13 +55,15 @@ export function toChart({ columns, rows }, type = 'bar', title = '') {
 
   let labels = rows.map((r) => String(r[0] ?? 'ไม่ระบุ'))
 
-  // ชิ้นเล็กๆ เยอะๆ ในวงกลมอ่านไม่ออกและสีไม่พอ ยุบเป็นก้อนเดียว
-  if (pie && labels.length > MAX_SLICES) {
+  // ก้อนเล็กๆ เยอะๆ อ่านไม่ออก เรียงจากมากไปน้อยแล้วยุบหางเป็นก้อนเดียว
+  // (ทำได้เฉพาะชุดข้อมูลเดียว หลายชุดจัดอันดับรวมไม่ได้)
+  const cap = pie ? MAX_SLICES : type === 'bar' && datasets.length === 1 ? MAX_BARS : 0
+  if (cap && labels.length > cap) {
     const order = labels
       .map((l, i) => ({ l, v: datasets[0].data[i] ?? 0 }))
       .sort((a, b) => b.v - a.v)
-    const top = order.slice(0, MAX_SLICES - 1)
-    const rest = order.slice(MAX_SLICES - 1).reduce((s, o) => s + o.v, 0)
+    const top = order.slice(0, cap - 1)
+    const rest = order.slice(cap - 1).reduce((s, o) => s + o.v, 0)
     labels = [...top.map((o) => o.l), `อื่นๆ (${order.length - top.length} รายการ)`]
     datasets[0].data = [...top.map((o) => o.v), rest]
   }
@@ -74,7 +78,8 @@ export const chartTool = {
 คอลัมน์แรกของ query คือป้ายกำกับ (เดือน/เพศ/แผนก) คอลัมน์ถัดไปคือค่าตัวเลข ใส่ได้หลายคอลัมน์ = หลายชุดข้อมูล (ยกเว้น pie/doughnut ใช้คอลัมน์เดียว)
 เลือก type: bar เทียบก้อนต่อก้อน, line ดูแนวโน้มตามเวลา, pie/doughnut ดูสัดส่วนของทั้งหมด, radar เทียบหลายด้านพร้อมกัน (ไม่เกิน ${MAX_AXES} แกน)
 pyramid = ปิรามิดประชากร ต้อง SELECT 3 คอลัมน์พอดี (กลุ่มอายุ, ชาย, หญิง) เรียงกลุ่มอายุน้อยไปมาก ระบบวางชายซ้าย หญิงขวาให้เอง
-ไม่เกิน ${MAX_POINTS} จุด คืน {chart, points} — จอวาดให้แล้ว ห้ามพิมพ์ตัวเลขซ้ำในคำตอบ บอกแค่ว่ากราฟบอกอะไร`,
+ไม่เกิน ${MAX_POINTS} จุด — bar ชุดเดียวที่เกิน ${MAX_BARS} ก้อน กับ pie ที่เกิน ${MAX_SLICES} ชิ้น ระบบเรียงมากไปน้อยแล้วยุบหางเป็น "อื่นๆ" ให้เอง ไม่ต้อง LIMIT มาเอง
+คืน {chart, points} — จอวาดให้แล้ว ห้ามพิมพ์ตัวเลขซ้ำในคำตอบ บอกแค่ว่ากราฟบอกอะไร`,
   parameters: {
     type: 'object',
     properties: {

@@ -28,6 +28,10 @@ function ChartBox({ spec }) {
     const radar = spec.type === 'radar'
     // ปิรามิดคือแท่งแนวนอนซ้อนกันสองฝั่ง chart.js ไม่มี type นี้ให้ตรงๆ
     const pyramid = spec.type === 'pyramid'
+    // ป้ายไทยยาวๆ หรือหมวดเยอะๆ ในแนวตั้งจะถูกหมุนเฉียงแล้วตัดทิ้ง นอนแล้วอ่านได้เต็มทุกป้าย
+    const sideways =
+      pyramid ||
+      (spec.type === 'bar' && (spec.labels.length > 10 || spec.labels.some((l) => l.length > 12)))
     const chart = new Chart(ref.current, {
       type: pyramid ? 'bar' : spec.type,
       data: {
@@ -55,7 +59,7 @@ function ChartBox({ spec }) {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
-        indexAxis: pyramid ? 'y' : 'x',
+        indexAxis: sideways ? 'y' : 'x',
         plugins: {
           title: { display: !!spec.title, text: spec.title, color: INK, font: { size: 14 } },
           // ชุดเดียวไม่ต้องมี legend หัวกราฟบอกอยู่แล้ว วงกลมต้องมีเพราะสีคือตัวบอกว่าชิ้นไหนคืออะไร
@@ -83,17 +87,19 @@ function ChartBox({ spec }) {
                   ticks: { color: MUTED, backdropColor: 'transparent' }
                 }
               }
-            : pyramid
+            : sideways
               ? {
+                  // แนวนอน: แกนค่าคือ x แกนหมวดคือ y (ปิรามิดซ้อนสองฝั่งเพิ่ม)
                   x: {
-                    stacked: true,
+                    stacked: pyramid,
+                    beginAtZero: true,
                     grid: { color: GRID },
                     ticks: { color: MUTED, callback: (v) => Math.abs(v).toLocaleString() }
                   },
                   // กลุ่มอายุน้อยต้องอยู่ล่างสุดตามแบบปิรามิด (query ส่งมาน้อยไปมาก)
                   y: {
-                    stacked: true,
-                    reverse: true,
+                    stacked: pyramid,
+                    reverse: pyramid,
                     grid: { color: GRID },
                     ticks: { color: MUTED }
                   }
@@ -108,7 +114,7 @@ function ChartBox({ spec }) {
   }, [spec])
 
   // ปิรามิดวางแท่งตามแนวตั้ง กลุ่มเยอะแล้วกล่องสูงคงที่จะบีบจนแท่งบางเป็นเส้น
-  const tall = spec.type === 'pyramid' && spec.labels.length > 10
+  const tall = (spec.type === 'pyramid' || spec.type === 'bar') && spec.labels.length > 10
   return (
     <div className="chart" style={tall ? { height: 26 * spec.labels.length + 120 } : undefined}>
       <canvas ref={ref} />
