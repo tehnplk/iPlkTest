@@ -17,9 +17,13 @@ export async function openDb(dataDir) {
   `)
 
   return {
+    // id ตัดสินเมื่อ updated_at เท่ากัน — now() คือเวลาเริ่ม transaction คำสั่งติดๆ กันได้ค่าเดียวกัน
     list: async () =>
-      (await pg.query('SELECT id, title, messages FROM conversations ORDER BY updated_at DESC'))
-        .rows,
+      (
+        await pg.query(
+          'SELECT id, title, messages FROM conversations ORDER BY updated_at DESC, id DESC'
+        )
+      ).rows,
 
     create: async (title) =>
       (await pg.query('INSERT INTO conversations (title) VALUES ($1) RETURNING id', [title]))

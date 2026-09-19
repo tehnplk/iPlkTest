@@ -1,7 +1,6 @@
 import { Component, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import Chart from 'chart.js/auto'
-import { lastResult } from './parse.mjs'
 
 const NEW_TITLE = 'การสนทนาใหม่'
 
@@ -129,9 +128,8 @@ function ChartBox({ spec }) {
 }
 
 // step.result มาจาก main เป็น {columns, rows, rowCount, truncated} หรือ {error}
-// step.output คือของเก่าสมัยยิงผ่าน db-cli (ข้อความคั่นด้วย |) ยังต้องอ่านได้อยู่
 function Result({ step }) {
-  const r = step.result ?? legacy(step.output)
+  const r = step.result ?? {}
   if (r.error) return <div className="result-error">{r.error}</div>
 
   const file = r.file && (
@@ -186,17 +184,6 @@ function Result({ step }) {
       {file}
     </div>
   )
-}
-
-function legacy(output = '') {
-  const [head, ...body] = lastResult(output)
-  if (head.length < 2) return { error: output }
-  return {
-    columns: head,
-    rows: body.slice(0, 200),
-    rowCount: body.length,
-    truncated: body.length > 200
-  }
 }
 
 // ผลจาก tool รูปแบบใหม่ๆ ไม่ควรทำให้ทั้งหน้าจอหาย — พังเฉพาะข้อความนั้นพอ

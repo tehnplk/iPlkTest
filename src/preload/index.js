@@ -1,7 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
 
-// Custom APIs for renderer
+// subscribe ช่อง push จาก main — คืนฟังก์ชันเลิกฟังให้ useEffect เก็บกวาด
+const on = (channel) => (cb) => {
+  const handler = (_e, value) => cb(value)
+  ipcRenderer.on(channel, handler)
+  return () => ipcRenderer.off(channel, handler)
+}
+
 const api = {
   convos: {
     list: () => ipcRenderer.invoke('convos:list'),
@@ -13,37 +18,20 @@ const api = {
   agent: {
     send: (messages, model) => ipcRenderer.invoke('agent:send', messages, model),
     approve: (id, ok) => ipcRenderer.invoke('agent:approve', id, ok),
-    onApproval: (cb) => {
-      const handler = (_e, info) => cb(info)
-      ipcRenderer.on('agent:approval', handler)
-      return () => ipcRenderer.off('agent:approval', handler)
-    },
+    onApproval: on('agent:approval'),
     models: () => ipcRenderer.invoke('agent:models'),
     stop: () => ipcRenderer.invoke('agent:stop'),
-    onStep: (cb) => {
-      const handler = (_e, step) => cb(step)
-      ipcRenderer.on('agent:step', handler)
-      return () => ipcRenderer.off('agent:step', handler)
-    },
-    onDelta: (cb) => {
-      const handler = (_e, text) => cb(text)
-      ipcRenderer.on('agent:delta', handler)
-      return () => ipcRenderer.off('agent:delta', handler)
-    }
+    onStep: on('agent:step'),
+    onDelta: on('agent:delta')
   }
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
-  window.electron = electronAPI
   window.api = api
 }
