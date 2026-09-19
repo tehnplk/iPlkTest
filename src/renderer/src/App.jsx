@@ -116,7 +116,13 @@ function ChartBox({ spec }) {
   // ปิรามิดวางแท่งตามแนวตั้ง กลุ่มเยอะแล้วกล่องสูงคงที่จะบีบจนแท่งบางเป็นเส้น
   const tall = (spec.type === 'pyramid' || spec.type === 'bar') && spec.labels.length > 10
   return (
-    <div className="chart" style={tall ? { height: 26 * spec.labels.length + 120 } : undefined}>
+    <div
+      className="chart"
+      // ไว้ให้เทสต์อ่านว่าวาดกราฟชนิดไหนจริง ๆ โดยไม่ต้องเดาจากภาพ
+      data-chart-type={spec.type}
+      data-points={spec.labels.length}
+      style={tall ? { height: 26 * spec.labels.length + 120 } : undefined}
+    >
       <canvas ref={ref} />
     </div>
   )
