@@ -49,7 +49,7 @@ export function openApi({ token = '' } = {}) {
 }
 
 const callApi = openApi({
-  token: import.meta.env?.MAIN_VITE_API_TOKEN ?? process.env.MAIN_VITE_API_TOKEN ?? ''
+  token: process.env.API_TOKEN ?? ''
 })
 
 export const apiTool = {

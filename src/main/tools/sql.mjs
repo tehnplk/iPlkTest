@@ -95,16 +95,16 @@ export function openSql(config) {
   }
 }
 
-// อ่านจาก import.meta.env ตอน build เป็นแอป และจาก process.env ตอนรันด้วย node ตรงๆ (spike/เทสต์)
-const env = (key, fallback = '') => import.meta.env?.[key] ?? process.env[key] ?? fallback
+// ค่ามาจาก .env ที่ env.mjs โหลดเข้า process.env ตอนเปิดแอป
+const env = (key, fallback = '') => process.env[key] ?? fallback
 
 // ต่อฐานข้อมูลใน main เอง โมเดลไม่เห็นรหัสผ่าน (ยังไม่ต่อจริงจนกว่าจะ query ครั้งแรก)
 export const db = openSql({
-  host: env('MAIN_VITE_DB_HOST', 'localhost'),
-  port: Number(env('MAIN_VITE_DB_PORT', 3306)),
-  user: env('MAIN_VITE_DB_USER'),
-  password: env('MAIN_VITE_DB_PASSWORD'),
-  database: env('MAIN_VITE_DB_NAME')
+  host: env('DB_HOST', 'localhost'),
+  port: Number(env('DB_PORT', 3306)),
+  user: env('DB_USER'),
+  password: env('DB_PASSWORD'),
+  database: env('DB_NAME')
 })
 
 export const sqlTool = {

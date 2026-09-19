@@ -12,18 +12,20 @@ import { fit } from './fit.mjs'
 import { store } from './store.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
 
-const env = (key, fallback = '') => import.meta.env?.[key] ?? process.env[key] ?? fallback
+const env = (key, fallback = '') => process.env[key] ?? fallback
 
+// base url ไม่มีค่าเริ่มต้น — แต่ละเครื่อง/แต่ละที่ตั้ง proxy คนละที่ ต้องมาจาก .env เท่านั้น
+const BASE_URL = env('LLM_BASE_URL')
 const llm = createOpenAICompatible({
   name: 'litellm',
-  baseURL: env('MAIN_VITE_LLM_BASE_URL', 'http://localhost:4000/v1'),
-  // ไม่มีคีย์ก็ยังเปิดแอปได้ — จะไปเด้ง 401 ตอนคุยแทน
-  apiKey: env('MAIN_VITE_LLM_API_KEY', 'missing-api-key')
+  baseURL: BASE_URL,
+  // ตั้งค่าไม่ครบก็ยังเปิดแอปได้ — ไปเด้งตอนคุยแทน จะได้ไม่เปิดแอปไม่ขึ้นทั้งตัว
+  apiKey: env('LLM_API_KEY', 'missing-api-key')
 })
 
 // ชื่อโมเดลเป็นของ proxy (คนละชุดกับชื่อ OpenRouter) และต่าง key ก็ได้สิทธิ์คนละรายการ
 // ดูของจริงที่ GET /v1/models — ตัวแรกคือค่าเริ่มต้นบนหน้าจอ
-export const MODELS = env('MAIN_VITE_LLM_MODELS', 'flash')
+export const MODELS = env('LLM_MODELS', 'flash')
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean)
@@ -57,6 +59,11 @@ export async function askAgentAi(
   messages,
   { instructions, model, downloadsDir, onStep, onDelta, onApproval, signal } = {}
 ) {
+  if (!BASE_URL)
+    throw new Error(
+      'ยังไม่ได้ตั้ง LLM_BASE_URL ใน .env — ใส่ base url ของ LiteLLM proxy เช่น http://localhost:4000/v1 แล้วเปิดแอปใหม่'
+    )
+
   const agent = new ToolLoopAgent({
     // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
     model: llm(MODELS.includes(model) ? model : MODELS[0]),

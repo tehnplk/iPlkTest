@@ -1,3 +1,5 @@
+// ต้องมาก่อนทุก import ที่อ่าน process.env ตอนโหลด (agent-ai, tools/sql, tools/api)
+import './env.mjs'
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'

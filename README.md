@@ -30,13 +30,14 @@ npm run dev
 
 | ตัวแปร                                                          | ใช้ทำอะไร                                                                                       |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `MAIN_VITE_LLM_BASE_URL`                                        | base url ของ LiteLLM proxy เช่น `http://localhost:4000/v1`                                      |
-| `MAIN_VITE_LLM_API_KEY`                                         | virtual key ของ proxy (ขึ้นต้น `sk-`) ขอจากผู้ดูแลระบบ                                          |
-| `MAIN_VITE_LLM_MODELS`                                          | ชื่อโมเดลที่ key นี้เรียกได้ คั่นด้วย `,` ตัวแรกเป็นค่าเริ่มต้น                                  |
-| `MAIN_VITE_DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP                                                                                 |
-| `MAIN_VITE_API_TOKEN`                                           | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี)                                                          |
+| `LLM_BASE_URL`                                        | base url ของ LiteLLM proxy เช่น `http://localhost:4000/v1`                                      |
+| `LLM_API_KEY`                                         | virtual key ของ proxy (ขึ้นต้น `sk-`) ขอจากผู้ดูแลระบบ                                          |
+| `LLM_MODELS`                                          | ชื่อโมเดลที่ key นี้เรียกได้ คั่นด้วย `,` ตัวแรกเป็นค่าเริ่มต้น                                  |
+| `DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP                                                                                 |
+| `API_TOKEN`                                           | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี)                                                          |
 
-> ค่าใน `.env` ถูก inline เข้า bundle ตอน build — อย่าแจกไฟล์ที่ build พร้อมคีย์
+> `.env` ถูกอ่านตอนเปิดแอป (ไม่ได้ฝังลงบันเดิลตอน build) แก้ค่าแล้วเปิดแอปใหม่พอ ไม่ต้อง build ใหม่
+> ตอนแพ็กเป็นแอปแล้วให้วางไฟล์ `.env` ไว้ข้าง `.exe`
 
 ## คำสั่ง
 
