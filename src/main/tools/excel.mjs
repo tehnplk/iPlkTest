@@ -28,13 +28,20 @@ export async function writeXlsx(dir, name, columns, rows) {
 
 export const excelTool = {
   name: 'export_excel',
-  description:
-    'รัน SELECT แล้วเซฟผลเป็นไฟล์ Excel (.xlsx) ในโฟลเดอร์ Downloads ใช้เมื่อผู้ใช้ขอไฟล์ หรือผลลัพธ์ยาวเกินกว่าจะดูบนจอ',
+  description: `รัน SELECT แล้วเซฟผลเป็นไฟล์ Excel (.xlsx) ในโฟลเดอร์ Downloads แล้วขึ้นปุ่มเปิดไฟล์ให้ผู้ใช้เอง
+ใช้เมื่อผู้ใช้ขอไฟล์ หรือผลยาวเกิน 200 แถวที่ tool sql ส่งกลับได้ (ที่นี่ได้ถึง ${MAX_EXPORT_ROWS.toLocaleString()} แถว)
+คืน {file, columns, rows 20 แถวแรกไว้ดูหน้าตา, rowCount} — ตอบผู้ใช้แค่ว่าเซฟให้แล้วกี่แถว ไม่ต้องบอก path`,
   parameters: {
     type: 'object',
     properties: {
-      sql: { type: 'string', description: 'SELECT ที่ต้องการ export (ไม่ต้องใส่ LIMIT)' },
-      filename: { type: 'string', description: 'ชื่อไฟล์ภาษาอังกฤษ เช่น dm_screening' }
+      sql: {
+        type: 'string',
+        description: 'SELECT ที่ต้องการ export ไม่ต้องใส่ LIMIT (ระบบตัดให้เองถ้าเกินเพดาน)'
+      },
+      filename: {
+        type: 'string',
+        description: 'ชื่อไฟล์อังกฤษตัวเล็ก ไม่ต้องใส่นามสกุล เช่น dm_screening_2568'
+      }
     },
     required: ['sql', 'filename']
   },

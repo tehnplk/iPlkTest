@@ -402,6 +402,16 @@ body {
   overflow: auto;
 }
 
+/* กราฟจาก render_chart — สูงคงที่ให้ canvas มีที่ยืน ไม่งั้น chart.js ยืดไม่จบ */
+.chart {
+  height: 360px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: var(--panel-dark);
+  border: 1px solid var(--agent-line);
+  border-radius: 6px;
+}
+
 /* แถวสุดท้ายไม่ต้องมีเส้นล่างซ้อนกับกรอบ */
 .result tr:last-child td {
   border-bottom: none;

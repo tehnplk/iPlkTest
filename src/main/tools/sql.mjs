@@ -109,12 +109,19 @@ export const db = openSql({
 
 export const sqlTool = {
   name: 'sql',
-  description:
-    'รัน SQL กับฐานข้อมูล HOSxP จริง ทีละคำสั่ง (อ่านอย่างเดียว + ตารางชั่วคราว tmp_) connection ค้างไว้ temp table อยู่ข้าม call ได้ คืน columns/rows/rowCount/truncated',
+  description: `รัน SQL กับฐานข้อมูล HOSxP จริง (MySQL/MariaDB) ทีละคำสั่ง
+อ่านอย่างเดียว: SELECT/SHOW/DESCRIBE/EXPLAIN/WITH — เขียนได้เฉพาะตารางชั่วคราวชื่อขึ้นต้น tmp_ ซึ่งอยู่ข้าม call ได้
+คืน {columns, rows, rowCount, truncated} rows เป็น array ของ array เรียงตาม columns ทุกค่าเป็น string หรือ null
+ได้ไม่เกิน ${MAX_ROWS} แถว (rowCount คือจำนวนจริง) ถ้าต้องการยอดรวมให้ใช้ COUNT/GROUP BY อย่าไล่นับจาก rows
+query ที่ไม่ขึ้นต่อกันให้เรียก tool นี้หลายครั้งในรอบเดียว ระบบรันขนานให้`,
   parameters: {
     type: 'object',
     properties: {
-      sql: { type: 'string', description: 'คำสั่งเดียว เช่น SELECT COUNT(*) AS total FROM patient' }
+      sql: {
+        type: 'string',
+        description:
+          'คำสั่งเดียว ไม่ต้องมี ; ปิดท้าย เช่น SELECT COUNT(*) AS total FROM patient — ใส่ LIMIT ทุกครั้งที่ไม่ได้ต้องการทั้งตาราง'
+      }
     },
     required: ['sql']
   },

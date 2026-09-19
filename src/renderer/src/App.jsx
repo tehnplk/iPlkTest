@@ -1,8 +1,120 @@
 import { Component, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
+import Chart from 'chart.js/auto'
 import { lastResult } from './parse.mjs'
 
 const NEW_TITLE = 'การสนทนาใหม่'
+
+// ชุดสีมาตรฐานสำหรับพื้นมืด เรียงตามลำดับตายตัว ห้ามวนใช้ซ้ำ (ผ่าน validator บนพื้น --agent แล้ว)
+const SERIES = [
+  '#3987e5',
+  '#d95926',
+  '#199e70',
+  '#c98500',
+  '#d55181',
+  '#008300',
+  '#9085e9',
+  '#e66767'
+]
+const INK = '#e8e8ea'
+const MUTED = '#8b8b92'
+const GRID = 'rgba(255,255,255,0.08)'
+const SURFACE = '#1e2a23'
+
+function ChartBox({ spec }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const pie = spec.type === 'pie' || spec.type === 'doughnut'
+    const radar = spec.type === 'radar'
+    // ปิรามิดคือแท่งแนวนอนซ้อนกันสองฝั่ง chart.js ไม่มี type นี้ให้ตรงๆ
+    const pyramid = spec.type === 'pyramid'
+    const chart = new Chart(ref.current, {
+      type: pyramid ? 'bar' : spec.type,
+      data: {
+        labels: spec.labels,
+        datasets: spec.datasets.map((d, i) => ({
+          ...d,
+          // ชุดเดียว = สีเดียวทั้งกราฟ (สีบอก "ชุดไหน" ไม่ใช่ "แท่งไหน") ยกเว้นวงกลมที่แต่ละชิ้นคือคนละก้อน
+          // radar ต้องโปร่ง ไม่งั้นชุดที่วาดทีหลังบังชุดแรกหมด
+          backgroundColor: pie
+            ? spec.labels.map((_, j) => SERIES[j % SERIES.length])
+            : radar
+              ? SERIES[i] + '38'
+              : SERIES[i],
+          borderColor: pie ? SURFACE : SERIES[i],
+          // เว้นขอบสีพื้นระหว่างชิ้น กันชิ้นติดกันกลืนเป็นก้อนเดียว
+          borderWidth: 2,
+          borderRadius: spec.type === 'bar' || pyramid ? 4 : undefined,
+          pointRadius: spec.type === 'line' || radar ? 4 : undefined,
+          pointBackgroundColor: SERIES[i],
+          fill: radar,
+          tension: 0.25
+        }))
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        indexAxis: pyramid ? 'y' : 'x',
+        plugins: {
+          title: { display: !!spec.title, text: spec.title, color: INK, font: { size: 14 } },
+          // ชุดเดียวไม่ต้องมี legend หัวกราฟบอกอยู่แล้ว วงกลมต้องมีเพราะสีคือตัวบอกว่าชิ้นไหนคืออะไร
+          legend: {
+            display: pie || spec.datasets.length > 1,
+            labels: { color: MUTED, boxWidth: 12 }
+          },
+          tooltip: {
+            enabled: true,
+            // ฝั่งซ้ายเก็บเป็นค่าติดลบ ผู้ใช้ต้องเห็นจำนวนจริง
+            callbacks: pyramid
+              ? { label: (c) => `${c.dataset.label}: ${Math.abs(c.parsed.x).toLocaleString()}` }
+              : {}
+          }
+        },
+        scales: pie
+          ? {}
+          : radar
+            ? {
+                r: {
+                  grid: { color: GRID },
+                  angleLines: { color: GRID },
+                  pointLabels: { color: MUTED },
+                  // ตัวเลขบนแกนกลางมีแผ่นรองสีขาวเป็นค่าเริ่มต้น บนพื้นมืดกลายเป็นป้ายสว่างกลางกราฟ
+                  ticks: { color: MUTED, backdropColor: 'transparent' }
+                }
+              }
+            : pyramid
+              ? {
+                  x: {
+                    stacked: true,
+                    grid: { color: GRID },
+                    ticks: { color: MUTED, callback: (v) => Math.abs(v).toLocaleString() }
+                  },
+                  // กลุ่มอายุน้อยต้องอยู่ล่างสุดตามแบบปิรามิด (query ส่งมาน้อยไปมาก)
+                  y: {
+                    stacked: true,
+                    reverse: true,
+                    grid: { color: GRID },
+                    ticks: { color: MUTED }
+                  }
+                }
+              : {
+                  x: { ticks: { color: MUTED }, grid: { color: GRID } },
+                  y: { ticks: { color: MUTED }, grid: { color: GRID }, beginAtZero: true }
+                }
+      }
+    })
+    return () => chart.destroy()
+  }, [spec])
+
+  // ปิรามิดวางแท่งตามแนวตั้ง กลุ่มเยอะแล้วกล่องสูงคงที่จะบีบจนแท่งบางเป็นเส้น
+  const tall = spec.type === 'pyramid' && spec.labels.length > 10
+  return (
+    <div className="chart" style={tall ? { height: 26 * spec.labels.length + 120 } : undefined}>
+      <canvas ref={ref} />
+    </div>
+  )
+}
 
 // step.result มาจาก main เป็น {columns, rows, rowCount, truncated} หรือ {error}
 // step.output คือของเก่าสมัยยิงผ่าน db-cli (ข้อความคั่นด้วย |) ยังต้องอ่านได้อยู่
@@ -15,6 +127,8 @@ function Result({ step }) {
       📄 เปิดไฟล์ Excel ({r.rowCount.toLocaleString()} แถว)
     </button>
   )
+  if (r.chart) return <ChartBox spec={r.chart} />
+
   // ผลจาก tool ความจำ
   if (r.saved) return <div className="more">🧠 จำไว้แล้ว: {r.saved}</div>
   if (r.forgot) return <div className="more">🧠 ลืมแล้ว: {r.forgot.join(', ')}</div>

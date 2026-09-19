@@ -42,9 +42,22 @@ const answer = async (approve) => {
   return { asks, text: (await msgs.nth((await msgs.count()) - 1).innerText()).trim() }
 }
 
+// โมเดลชอบเติม LIMIT ให้เองตามที่ tool สั่ง ถามครั้งเดียวแล้วไม่เด้งไม่ได้แปลว่าพัง — ย้ำอีกรอบก่อนตัดสิน
+const askRisky = async (approve) => {
+  let r
+  for (const q of [
+    'รัน SQL นี้ตรงๆ ห้ามแก้ ห้ามใส่ LIMIT: select * from patient',
+    'ย้ำว่าต้องเป็น select * from patient เท่านั้น ห้ามเติม LIMIT ห้ามเติม WHERE ห้ามเปลี่ยนเป็น COUNT'
+  ]) {
+    await ask(q)
+    r = await answer(approve)
+    if (r.asks.length) break
+  }
+  return r
+}
+
 // 1) คำสั่งเสี่ยง (select * ไม่มี limit) ต้องเด้งขออนุมัติ แล้วกดอนุมัติให้ไปต่อได้
-await ask('รัน SQL นี้ตรงๆ ห้ามแก้ ห้ามใส่ LIMIT: select * from patient')
-const yes = await answer(true)
+const yes = await askRisky(true)
 console.log(ms(), 'คำตอบหลังอนุมัติ:\n' + yes.text.slice(0, 200))
 assert.ok(yes.asks.length, 'select * ทั้งตารางต้องเด้งขออนุมัติก่อน')
 assert.match(yes.asks[0], /select \* from patient/i, 'args ที่ขออนุมัติต้องเป็น SQL ที่โมเดลขอรัน')
@@ -53,8 +66,7 @@ const cells = await win.locator('.result td').count()
 assert.ok(cells > 0, 'ต้องมีตารางผลลัพธ์หลังอนุมัติ')
 
 // 2) รอบเดียวกันแต่กดไม่อนุมัติ — ต้องไม่ค้าง ต้องบอกบนจอว่าไม่อนุมัติ และต้องไม่มีแถวใหม่
-await ask('รัน SQL นี้ตรงๆ ห้ามแก้ ห้ามใส่ LIMIT: select * from patient where 1=1')
-const no = await answer(false)
+const no = await askRisky(false)
 console.log(ms(), 'คำตอบหลังปฏิเสธ:\n' + no.text.slice(0, 200))
 assert.ok(no.asks.length, 'ต้องเด้งขออนุมัติ')
 assert.ok(no.text.length > 0, 'ถูกปฏิเสธแล้วยังต้องตอบกลับ ไม่ใช่ค้าง')

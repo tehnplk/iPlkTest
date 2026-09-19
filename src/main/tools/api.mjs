@@ -54,15 +54,26 @@ const callApi = openApi({
 
 export const apiTool = {
   name: 'rest_api',
-  description:
-    'เรียก REST API ภายนอก (เฉพาะ host ที่ผู้ใช้อนุญาตไว้) คืน {status, body} ใช้ตอนต้องดึงหรือส่งข้อมูลกับระบบอื่น เช่น API ของ สปสช./สสจ.',
+  description: `เรียก REST API ภายนอกด้วย http/https ได้ทุก host ตามที่ผู้ใช้สั่ง ใช้ตอนต้องดึงหรือส่งข้อมูลกับระบบอื่น เช่น API ของ สปสช./สสจ.
+คืน {status, body} — body เป็น JSON ถ้าแปลงได้ ไม่งั้นเป็นข้อความดิบ ตัดที่ ${MAX_BYTES / 1000} KB
+เรียกไม่สำเร็จจะคืน {error} ไม่ throw ให้อ่าน error แล้วแก้ url/method เองก่อนลองใหม่ (timeout ${TIMEOUT_MS / 1000} วินาที)`,
   parameters: {
     type: 'object',
     properties: {
-      url: { type: 'string', description: 'URL เต็ม เช่น https://api.example.go.th/v1/person' },
-      method: { type: 'string', description: 'GET (ค่าเริ่มต้น), POST, PUT, PATCH, DELETE' },
-      body: { type: 'string', description: 'เนื้อหาที่ส่ง ปกติเป็น JSON string' },
-      headers: { type: 'object', description: 'header เพิ่มเติม ไม่ต้องใส่ token เอง' }
+      url: {
+        type: 'string',
+        description:
+          'URL เต็มรวม query string เช่น https://api.example.go.th/v1/person?cid=1234567890123'
+      },
+      method: { type: 'string', enum: METHODS, default: 'GET', description: 'ไม่ใส่ = GET' },
+      body: {
+        type: 'string',
+        description: 'เนื้อหาที่ส่งเป็น JSON string (ระบบใส่ content-type: application/json ให้เอง)'
+      },
+      headers: {
+        type: 'object',
+        description: 'header เพิ่มเติม ห้ามใส่ token/รหัสผ่าน แอปแนบ authorization ให้แล้ว'
+      }
     },
     required: ['url']
   },

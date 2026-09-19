@@ -6,6 +6,8 @@ import { db, sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
+import { chartTool } from './tools/chart.mjs'
+import { fit } from './fit.mjs'
 import { store } from './store.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
 
@@ -45,7 +47,8 @@ const wrap = (t, ctx) =>
   tool({
     description: t.description,
     inputSchema: jsonSchema(t.parameters),
-    execute: async (input) => t.run(input, undefined, ctx)
+    execute: async (input) => t.run(input, undefined, ctx),
+    toModelOutput: ({ output }) => ({ type: 'json', value: fit(output) })
   })
 
 export async function askAgentAi(
@@ -61,7 +64,8 @@ export async function askAgentAi(
       sql: wrap(sqlTool, { downloadsDir }),
       export_excel: wrap(excelTool, { downloadsDir }),
       rest_api: wrap(apiTool, { downloadsDir }),
-      memory: wrap(memoryTool, { downloadsDir })
+      memory: wrap(memoryTool, { downloadsDir }),
+      render_chart: wrap(chartTool, { downloadsDir })
     },
     toolApproval: ({ toolCall }) =>
       risky(toolCall.toolName, toolCall.input) ? 'user-approval' : undefined
