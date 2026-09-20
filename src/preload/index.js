@@ -21,6 +21,7 @@ const api = {
     models: () => ipcRenderer.invoke('agent:models'),
     stop: () => ipcRenderer.invoke('agent:stop'),
     onStep: on('agent:step'),
+    onJev: on('agent:jev'),
     onDelta: on('agent:delta')
   }
 }

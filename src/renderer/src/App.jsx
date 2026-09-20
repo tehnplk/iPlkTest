@@ -240,10 +240,13 @@ function App() {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [runningSql, setRunningSql] = useState('')
+  // คำตัดสินของ jev รอบนี้ (เลือกโมเดลตามความยาก) โชว์คั่นระหว่าง "กำลังคิด" กับ SQL
+  const [jevNote, setJevNote] = useState('')
   const [streamed, setStreamed] = useState('')
   const [models, setModels] = useState([])
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
-  const [model, setModel] = useState(() => localStorage.getItem('model') || '')
+  // '' = อัตโนมัติ ให้ jev เลือกโมเดลตามความยากของคำถาม
+  const [model, setModel] = useState(() => localStorage.getItem('model') ?? '')
   const endRef = useRef(null)
   const started = useRef(false)
 
@@ -261,10 +264,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    window.api.agent.models().then((list) => {
-      setModels(list)
-      setModel((cur) => (list.includes(cur) ? cur : list[0]))
-    })
+    window.api.agent.models().then(setModels)
   }, [])
 
   // main ส่ง sql ที่กำลังรัน และตัวอักษรที่โมเดลพิมพ์ มาแบบ realtime
@@ -278,6 +278,8 @@ function App() {
   )
 
   useEffect(() => window.api.agent.onDelta((t) => setStreamed((prev) => prev + t)), [])
+
+  useEffect(() => window.api.agent.onJev(setJevNote), [])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -332,6 +334,7 @@ function App() {
     setBusy(true)
     setRunningSql('')
     setStreamed('')
+    setJevNote('')
 
     const sent = [...active.messages, { role: 'user', content: text }]
     const title = active.messages.length ? active.title : text.slice(0, 40)
@@ -350,6 +353,7 @@ function App() {
     setBusy(false)
     setRunningSql('')
     setStreamed('')
+    setJevNote('')
     await window.api.convos.save({ id: activeId, title, messages })
   }
 
@@ -417,6 +421,7 @@ function App() {
               localStorage.setItem('model', e.target.value)
             }}
           >
+            <option value="">อัตโนมัติ</option>
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -459,6 +464,7 @@ function App() {
               ) : (
                 <>
                   <span className="dots">กำลังคิด...</span>
+                  {jevNote && <div className="jev-note">{jevNote}</div>}
                   {runningSql && <pre className="sql running">{runningSql}</pre>}
                 </>
               )}

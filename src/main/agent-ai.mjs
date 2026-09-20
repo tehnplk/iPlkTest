@@ -1,6 +1,7 @@
 // agent ของแอป — Vercel AI SDK ยิงผ่าน LiteLLM proxy อย่างเดียว ไม่ต่อ OpenRouter ตรง
 // (proxy คุมคีย์ โควตา และสิทธิ์โมเดลรายคนให้ แอปถือแค่ virtual key ของตัวเอง)
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { askJev, HOSXP } from './jev.mjs'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
 import { db, sqlTool, isTemp } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
@@ -46,6 +47,57 @@ ${saved.map((m) => `- ${m}`).join('\n')}`
 
 export const closeAgent = () => db.close()
 
+// เลือกโมเดลตามความยากของงาน — glm แพงสุด/เก่งสุด, deepseek ถูกสุด (วัดความรู้ HOSxP ได้ 13/15
+// ตอน glm กับ qwen ได้ 15/15) จับคู่จากชื่อ ถ้า .env เปลี่ยนรุ่นก็ยังหาเจอ
+// ไล่ตามลำดับในลิสต์ ตัวไหนมีใน LLM_MODELS ก่อนก็ใช้ตัวนั้น — ling ยังไม่ได้ขึ้น LiteLLM
+// พอเพิ่มเข้าไปแล้วมันจะสลับมาใช้เองโดยไม่ต้องแก้โค้ด ระหว่างนี้ตกไปใช้ตัวสำรอง
+const TIER = {
+  hard: [/glm/i],
+  medium: [/inclusionai\/ling/i, /qwen/i],
+  easy: [/inclusionai\/ling/i, /deepseek/i]
+}
+const pickTier = (level) => {
+  for (const re of TIER[level] ?? []) {
+    const found = MODELS.find((m) => re.test(m))
+    if (found) return found
+  }
+  return MODELS[0]
+}
+const LEVEL_TH = { hard: 'ยาก', medium: 'ปานกลาง', easy: 'ง่าย' }
+// ชื่อโมเดลบนจอเอาแค่ท้ายสแลช ผู้ใช้ไม่ต้องรู้ชื่อผู้ให้บริการ
+const shortName = (m) => m.split('/').pop()
+const LEVEL_CRITERIA = {
+  hard: 'The answer needs at least one of: three or more tables joined; looking a code up in a registry table before it can be filtered on; finding people for whom a record is ABSENT (never vaccinated, never screened, did not return); or arithmetic on dates and ages such as an age window at a given date. Clinical indicators defined by a ministry or funder are hard',
+  medium:
+    'The answer needs one or two tables plus a WHERE and a GROUP BY, or a distinct count over a date range. It may take one lookup to confirm which table holds the data, but no registry decoding and no absence check',
+  easy: 'The answer is a single count, sum or short listing straight out of one obvious table with at most a simple filter. Also easy: a greeting, chitchat, or a follow-up on the previous answer such as make it a chart, export to excel, show more rows, sort differently'
+}
+
+// วัดกับคำถามจริง 14 ข้อจากงานหน้างาน ถูก 14/14 สองรอบติด — npm run bench:route
+async function chooseModel(ask, signal, onJev) {
+  if (!ask?.trim()) return MODELS[0]
+  const answers = await askJev(
+    { hosxp: HOSXP, user_request: ask },
+    {
+      level: {
+        type: 'choice',
+        instructions:
+          'How much SQL work does this request take on a hospital database? Judge the shape of the query needed, not how unfamiliar the wording sounds',
+        criteria: LEVEL_CRITERIA
+      }
+    },
+    signal
+  )
+  // jev ฟันธงมาให้ในฟิลด์ choice อยู่แล้ว ไม่ต้องไปหา argmax จาก probabilities เอง
+  const { choice, confidence } = answers?.level ?? {}
+  // ตัดสินไม่ได้ = ใช้ตัวเก่งสุด ถูกกว่าเดาเป็นตัวถูกแล้วตอบผิด
+  if (!choice) return MODELS[0]
+  const picked = pickTier(choice)
+  console.log(`[jev] งาน${choice} (${Number(confidence ?? 0).toFixed(2)}) → ${picked}`)
+  onJev?.(`jev: งาน${LEVEL_TH[choice] ?? choice} → ${shortName(picked)}`)
+  return picked
+}
+
 // ข้อความล่าสุดของผู้ใช้ — เทิร์นเก่าถูก replay มาด้วย เลยต้องไล่จากท้าย
 const lastAsk = (msgs) => {
   const c = [...msgs].reverse().find((m) => m.role === 'user')?.content
@@ -67,7 +119,7 @@ const wrap = (t, ctx) =>
 
 export async function askAgentAi(
   messages,
-  { instructions, model, downloadsDir, onStep, onDelta, signal } = {}
+  { instructions, model, downloadsDir, onStep, onDelta, onJev, signal } = {}
 ) {
   if (!BASE_URL)
     throw new Error(
@@ -75,16 +127,16 @@ export async function askAgentAi(
     )
 
   const convo = toModelMessages(messages)
+  const ask = lastAsk(convo)
+  // ผู้ใช้เลือกเองได้ ถ้าไม่เลือก (AUTO) ให้ jev ดูคำถามแล้วจับคู่โมเดลตามความยาก
+  const picked = MODELS.includes(model) ? model : await chooseModel(ask, signal, onJev)
 
   const agent = new ToolLoopAgent({
-    // กันชื่อโมเดลแปลกปลอม ถ้าไม่อยู่ในรายการให้ใช้ตัวแรก
-    model: llm(MODELS.includes(model) ? model : MODELS[0]),
+    model: llm(picked),
     instructions,
     stopWhen: isStepCount(30),
     // ask = คำถามผู้ใช้เทิร์นนี้ ส่งให้ tool ใช้ได้ (web_search เอาไปให้ jev คัดผลค้น)
-    tools: Object.fromEntries(
-      TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask: lastAsk(convo) })])
-    )
+    tools: Object.fromEntries(TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask })]))
   })
 
   // ทุกอย่างที่งอกหลังจุดนี้คือของเทิร์นนี้ เก็บไว้ให้เทิร์นหน้า replay ต่อ
@@ -134,9 +186,13 @@ export async function askAgentAi(
   // ถ้ามี query จริงให้โชว์อันนั้น ไม่ใช่ DESCRIBE ที่บังเอิญเป็นคำสั่งสุดท้าย
   const final = dataStep ?? step
   const ran = script.filter((s) => s.ok).map((s) => s.sql)
+  // โมเดลสายคิดเยอะบางทีใช้โควตาไปกับ reasoning จนไม่เหลือข้อความ ปล่อยไปผู้ใช้เห็นกล่องเปล่า
+  // ไม่รู้ว่าพังหรือแค่ช้า — ขึ้น ⚠ ให้เหมือน error อื่นๆ (UI โชว์ปุ่มทำต่อให้ด้วย)
+  const text = (await result.text)?.trim()
   return {
     role: 'assistant',
-    content: await result.text,
+    content: text || '⚠ โมเดลไม่ได้ตอบข้อความกลับมา ลองถามใหม่ หรือเลือกโมเดลอื่นจากกล่องมุมขวาบน',
+    model: picked,
     // ผ่าน JSON รอบหนึ่ง เพราะของนี้ต้องข้าม IPC แล้วลง jsonb — ให้พังตรงนี้ดีกว่าไปพังหลังเปิดแอปใหม่
     modelMessages: JSON.parse(
       JSON.stringify([...convo.slice(baseline), ...(await result.responseMessages)])

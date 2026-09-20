@@ -67,6 +67,7 @@ app.whenReady().then(async () => {
       model,
       onStep: (s) => e.sender.send('agent:step', s),
       onDelta: (d) => e.sender.send('agent:delta', d),
+      onJev: (note) => e.sender.send('agent:jev', note),
       signal,
       instructions: await buildSystem(),
       downloadsDir: app.getPath('downloads')

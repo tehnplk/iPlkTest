@@ -1,5 +1,6 @@
 import { join } from 'path'
 import { db } from './sql.mjs'
+import { enrichResult, PERSON_COLUMNS } from '../person-details.mjs'
 import ExcelJS from 'exceljs'
 
 // กันไฟล์ใหญ่จนแอปค้าง — เกินนี้ให้ผู้ใช้ซอย query เอง
@@ -30,6 +31,7 @@ export const excelTool = {
   name: 'export_excel',
   description: `รัน SELECT แล้วเซฟผลเป็นไฟล์ Excel (.xlsx) ในโฟลเดอร์ Downloads แล้วขึ้นปุ่มเปิดไฟล์ให้ผู้ใช้เอง
 ใช้เมื่อผู้ใช้ขอไฟล์ หรือผลยาวเกิน 200 แถวที่ tool sql ส่งกลับได้ (ที่นี่ได้ถึง ${MAX_EXPORT_ROWS.toLocaleString()} แถว)
+ถ้าผลมี patient.hos_guid หรือ person.person_id ระบบจะเติม cid, hn, pname, fname, lname ลงในไฟล์ให้เอง (จะแจ้งใน added_columns)
 คืน {file, columns, rows 20 แถวแรกไว้ดูหน้าตา, rowCount} — ตอบผู้ใช้แค่ว่าเซฟให้แล้วกี่แถว ไม่ต้องบอก path`,
   parameters: {
     type: 'object',
@@ -48,8 +50,17 @@ export const excelTool = {
   run: async (args, signal, { downloadsDir }) => {
     const res = await db.query(args.sql ?? '', signal, MAX_EXPORT_ROWS)
     if (res.error || !res.columns.length) return res
-    const file = await writeXlsx(downloadsDir, args.filename, res.columns, res.rows)
-    // ส่งกลับแค่ 20 แถวให้โมเดลพอเห็นหน้าตา ที่เหลืออยู่ในไฟล์
-    return { ...res, rows: res.rows.slice(0, 20), truncated: res.rowCount > 20, file }
+    // เติมชื่อลงไฟล์ด้วย ไม่งั้นไฟล์ไม่ตรงกับตารางบนจอที่ผู้ใช้เห็น
+    const full = await enrichResult(res, args.sql, db.personDetails, signal)
+    const file = await writeXlsx(downloadsDir, args.filename, full.columns, full.rows)
+    const added = full.columns.length > res.columns.length
+    // โมเดลต้องไม่เห็นค่าที่เติมเข้าไป ส่งกลับเฉพาะคอลัมน์ที่มันเขียนมาเอง
+    return {
+      ...res,
+      rows: res.rows.slice(0, 20),
+      truncated: res.rowCount > 20,
+      file,
+      ...(added ? { added_columns: PERSON_COLUMNS } : {})
+    }
   }
 }

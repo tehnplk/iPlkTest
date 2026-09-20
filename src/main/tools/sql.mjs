@@ -129,9 +129,12 @@ const verdict = (leaking) => {
 }
 
 // ก่อนรัน: ดูจาก projection ที่โมเดลเขียนมา ได้ชื่อตรงกับที่มันพิมพ์ บอกให้ตัดได้ตรงตัว
+// คำตัดสินไม่ได้ส่งขึ้นจอ — prompt กันคอลัมน์พวกนี้ไว้ก่อนแล้ว ด่านนี้แทบไม่ทำงาน
+// ที่ผู้ใช้ควรเห็นคือข้อความที่ agent ตอบกลับมาว่าดึงคอลัมน์นั้นไม่ได้ ซึ่งเห็นอยู่แล้ว
 export async function checkLeak(sql, signal, ask = askJev) {
   if (METADATA.test(sql)) return null // SHOW/DESCRIBE คืนโครงสร้าง ไม่ใช่ข้อมูลคน ไม่ต้องจ่ายค่าถาม
-  return verdict(await leakingColumns(projections(sql).flatMap(splitColumns), sql, signal, ask))
+  const cols = projections(sql).flatMap(splitColumns)
+  return verdict(await leakingColumns(cols, sql, signal, ask))
 }
 
 // SELECT * ห้ามทุกกรณี — ตอนก่อนรันมองไม่เห็นว่าจะได้คอลัมน์อะไร ตรวจไม่ได้

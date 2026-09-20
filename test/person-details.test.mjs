@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { appendPersonDetails } from '../src/main/person-details.mjs'
+import { appendPersonDetails, enrichResult } from '../src/main/person-details.mjs'
 
 // jev ปลอม: ให้ hook ตามชื่อคอลัมน์ ยกเว้นเทสต์ที่ส่ง decide ของตัวเองเข้าไป
 const pick = (by) => async () => by
@@ -110,4 +110,27 @@ await assert.rejects(
   /lookup failed/
 )
 await assert.rejects(appendPersonDetails(answer, () => assert.fail('aborted'), AbortSignal.abort()))
+// enrichResult ใช้ร่วมกับ export_excel ต้องเติมคอลัมน์เดียวกับที่โชว์บนจอ
+const forExcel = await enrichResult(
+  { columns: ['hos_guid', 'visits'], rows: [['A', '2']] },
+  'SELECT hos_guid, visits FROM tmp_x',
+  async (by, ids) => {
+    assert.equal(by, 'hos_guid')
+    assert.deepEqual(ids, ['A'])
+    return [{ id: 'a', cid: 'c1', hn: '001', pname: 'นาย', fname: 'ก', lname: 'ข' }]
+  },
+  null,
+  pick('hos_guid')
+)
+assert.deepEqual(forExcel.columns, ['hos_guid', 'visits', 'cid', 'hn', 'pname', 'fname', 'lname'])
+assert.deepEqual(forExcel.rows[0], ['A', '2', 'c1', '001', 'นาย', 'ก', 'ข'])
+// ไม่มีคีย์ระบุคน ต้องคืนตัวเดิมไปเลย (ไฟล์จะได้ไม่มีคอลัมน์ว่างงอกมา)
+const plain = { columns: ['total'], rows: [['5']] }
+assert.equal(
+  await enrichResult(plain, 'SELECT COUNT(*) AS total FROM patient', () =>
+    assert.fail('ไม่ควรค้นหา')
+  ),
+  plain
+)
+
 console.log('person details ok')
