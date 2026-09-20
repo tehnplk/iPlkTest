@@ -6,6 +6,8 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
 import { askAgentAi, closeAgent, MODELS, buildSystem } from './agent-ai.mjs'
+import { db as hospitalDb } from './tools/sql.mjs'
+import { appendPersonDetails } from './person-details.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -57,32 +59,21 @@ app.whenReady().then(async () => {
   ipcMain.handle('file:open', (_e, path) => shell.openPath(path))
   ipcMain.handle('agent:models', () => MODELS)
 
-  // agent ถามผู้ใช้ก่อนรันคำสั่งเสี่ยง — รอคำตอบจากหน้าจอ
-  let approvals = 0
-  const pending = new Map()
-  ipcMain.handle('agent:approve', (_e, id, ok) => pending.get(id)?.(ok))
-
   ipcMain.handle('agent:send', async (e, messages, model) => {
     running = new AbortController()
+    const signal = running.signal
     // onStep = sql ที่กำลังรัน, onDelta = ตัวอักษรที่โมเดลพิมพ์ ส่งให้ UI โชว์สดๆ
     const run = askAgentAi(messages, {
       model,
       onStep: (s) => e.sender.send('agent:step', s),
       onDelta: (d) => e.sender.send('agent:delta', d),
-      signal: running.signal,
+      signal,
       instructions: await buildSystem(),
-      downloadsDir: app.getPath('downloads'),
-      onApproval: (info) =>
-        new Promise((resolve) => {
-          const id = ++approvals
-          pending.set(id, (ok) => {
-            pending.delete(id)
-            resolve(ok)
-          })
-          e.sender.send('agent:approval', { id, ...info })
-        })
+      downloadsDir: app.getPath('downloads')
     })
-    return run.finally(() => (running = null))
+    return run
+      .then((answer) => appendPersonDetails(answer, hospitalDb.personDetails, signal))
+      .finally(() => (running = null))
   })
 
   // Set app user model id for windows

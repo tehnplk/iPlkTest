@@ -513,32 +513,6 @@ body {
   }
 }
 
-.approval {
-  border-color: #8a6d3b;
-  background: #2b2418;
-}
-
-.approval-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.approval-buttons button {
-  padding: 5px 14px;
-  border: none;
-  border-radius: 6px;
-  background: #3f8a5e;
-  color: #fff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-}
-
-.approval-buttons .reject {
-  background: #b23b3b;
-}
-
 .continue {
   display: block;
   margin-top: 8px;

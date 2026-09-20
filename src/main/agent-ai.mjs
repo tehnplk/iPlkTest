@@ -1,6 +1,5 @@
 // agent ของแอป — Vercel AI SDK ยิงผ่าน LiteLLM proxy อย่างเดียว ไม่ต่อ OpenRouter ตรง
 // (proxy คุมคีย์ โควตา และสิทธิ์โมเดลรายคนให้ แอปถือแค่ virtual key ของตัวเอง)
-// approval เป็นฟีเจอร์ในตัว (toolApproval) ไม่ต้องเขียนลูปเอง
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
 import { db, sqlTool, isTemp } from './tools/sql.mjs'
@@ -47,10 +46,6 @@ ${saved.map((m) => `- ${m}`).join('\n')}`
 
 export const closeAgent = () => db.close()
 
-// คำสั่งที่ควรถามก่อนรัน: ดึงทั้งตารางแบบไม่จำกัดจำนวน
-const risky = (name, input = {}) =>
-  name === 'sql' && /^\s*select\s+\*/i.test(input.sql ?? '') && !/\blimit\b/i.test(input.sql ?? '')
-
 // ข้อความล่าสุดของผู้ใช้ — เทิร์นเก่าถูก replay มาด้วย เลยต้องไล่จากท้าย
 const lastAsk = (msgs) => {
   const c = [...msgs].reverse().find((m) => m.role === 'user')?.content
@@ -72,7 +67,7 @@ const wrap = (t, ctx) =>
 
 export async function askAgentAi(
   messages,
-  { instructions, model, downloadsDir, onStep, onDelta, onApproval, signal } = {}
+  { instructions, model, downloadsDir, onStep, onDelta, signal } = {}
 ) {
   if (!BASE_URL)
     throw new Error(
@@ -89,9 +84,7 @@ export async function askAgentAi(
     // ask = คำถามผู้ใช้เทิร์นนี้ ส่งให้ tool ใช้ได้ (web_search เอาไปให้ jev คัดผลค้น)
     tools: Object.fromEntries(
       TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask: lastAsk(convo) })])
-    ),
-    toolApproval: ({ toolCall }) =>
-      risky(toolCall.toolName, toolCall.input) ? 'user-approval' : undefined
+    )
   })
 
   // ทุกอย่างที่งอกหลังจุดนี้คือของเทิร์นนี้ เก็บไว้ให้เทิร์นหน้า replay ต่อ
@@ -117,45 +110,30 @@ export async function askAgentAi(
         const label = sql ?? `${part.toolName}: ${Object.values(part.input ?? {}).join(' ')}`
         onStep?.({ sql: label })
         step = { sql: label, result: null }
-        if (isTemp(sql) && !script.includes(sql)) script.push(sql)
+        // จองที่ไว้ตามลำดับที่เรียก แต่ยังไม่รู้ว่าผ่านไหม ต้องรอ tool-result มาติ๊ก ok
+        if (isTemp(sql) && !script.some((s) => s.sql === sql))
+          script.push({ id: part.toolCallId, sql, ok: false })
       }
       if (part.type === 'tool-result') {
         step = { sql: step?.sql ?? '', result: part.output }
         if (!/^\s*(show|desc|describe|explain)\b/i.test(step.sql)) dataStep = step
+        // คำสั่งที่ถูกปฏิเสธ (เช่น CREATE TABLE ที่ไม่ใช่ TEMPORARY) ต้องไม่หลุดเข้าสคริปต์
+        // ที่ผู้ใช้ก๊อปไปรันเอง ไม่งั้นเขาไปสร้างตารางจริงในฐานโดยไม่ตั้งใจ
+        const entry = script.find((s) => s.id === part.toolCallId)
+        if (entry) entry.ok = !part.output?.error
       }
       // tool พังหรือถูกปฏิเสธไม่ได้มาเป็น tool-result — ไม่ดักไว้ result จะค้างเป็น null แล้วหน้าจอโชว์ error ว่างๆ
       if (part.type === 'tool-error')
         step = { sql: step?.sql ?? '', result: { error: String(part.error) } }
-      if (part.type === 'tool-output-denied')
-        step = { sql: step?.sql ?? '', result: { error: 'ผู้ใช้ไม่อนุมัติให้รันคำสั่งนี้' } }
     }
     return result
   }
 
-  let result = await run(convo)
-  let content = await result.content
-
-  // tool ที่ต้องอนุมัติจะหยุดรอ ส่งคำตอบกลับไปเป็นข้อความ role: 'tool'
-  for (let round = 0; round < 5; round++) {
-    const asks = content.filter((p) => p.type === 'tool-approval-request' && !p.isAutomatic)
-    if (!asks.length) break
-
-    const approvals = []
-    for (const ask of asks) {
-      const ok = await onApproval?.({
-        name: ask.toolName ?? ask.toolCall?.toolName ?? 'tool',
-        args: JSON.stringify(ask.input ?? ask.toolCall?.input ?? {})
-      })
-      approvals.push({ type: 'tool-approval-response', approvalId: ask.approvalId, approved: !!ok })
-    }
-
-    convo.push(...(await result.responseMessages), { role: 'tool', content: approvals })
-    result = await run(convo)
-    content = await result.content
-  }
+  const result = await run(convo)
 
   // ถ้ามี query จริงให้โชว์อันนั้น ไม่ใช่ DESCRIBE ที่บังเอิญเป็นคำสั่งสุดท้าย
   const final = dataStep ?? step
+  const ran = script.filter((s) => s.ok).map((s) => s.sql)
   return {
     role: 'assistant',
     content: await result.text,
@@ -163,6 +141,6 @@ export async function askAgentAi(
     modelMessages: JSON.parse(
       JSON.stringify([...convo.slice(baseline), ...(await result.responseMessages)])
     ),
-    step: final && script.length ? { ...final, sql: script.join(';\n\n') } : final
+    step: final && ran.length ? { ...final, sql: ran.join(';\n\n') } : final
   }
 }

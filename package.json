@@ -9,8 +9,7 @@
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "e2e": "node test/e2e.mjs",
-    "approval": "node test/approval.mjs",
-    "test": "node test/fit.test.mjs && node test/web.test.mjs && node test/history.test.mjs && node test/chart.test.mjs && node test/db.test.mjs && node test/sql.test.mjs && node test/excel.test.mjs && node test/api.test.mjs",
+    "test": "node test/fit.test.mjs && node test/web.test.mjs && node test/history.test.mjs && node test/chart.test.mjs && node test/db.test.mjs && node test/sql.test.mjs && node test/person-details.test.mjs && node test/excel.test.mjs && node test/api.test.mjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -18,7 +17,8 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "bench:persona": "node test/persona.bench.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.53",

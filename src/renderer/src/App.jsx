@@ -244,7 +244,6 @@ function App() {
   const [models, setModels] = useState([])
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
   const [model, setModel] = useState(() => localStorage.getItem('model') || '')
-  const [approval, setApproval] = useState(null)
   const endRef = useRef(null)
   const started = useRef(false)
 
@@ -279,14 +278,6 @@ function App() {
   )
 
   useEffect(() => window.api.agent.onDelta((t) => setStreamed((prev) => prev + t)), [])
-
-  // ฝั่ง SDK จะหยุดถามก่อนรันคำสั่งเสี่ยง
-  useEffect(() => window.api.agent.onApproval(setApproval), [])
-
-  const answerApproval = (ok) => {
-    window.api.agent.approve(approval.id, ok)
-    setApproval(null)
-  }
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -359,7 +350,6 @@ function App() {
     setBusy(false)
     setRunningSql('')
     setStreamed('')
-    setApproval(null)
     await window.api.convos.save({ id: activeId, title, messages })
   }
 
@@ -462,18 +452,6 @@ function App() {
               )}
             </div>
           ))}
-          {approval && (
-            <div className="msg assistant approval">
-              <div>ขออนุมัติรัน {approval.name}</div>
-              <pre className="sql">{approval.args}</pre>
-              <div className="approval-buttons">
-                <button onClick={() => answerApproval(true)}>อนุมัติ</button>
-                <button className="reject" onClick={() => answerApproval(false)}>
-                  ไม่อนุมัติ
-                </button>
-              </div>
-            </div>
-          )}
           {busy && (
             <div className="msg assistant">
               {streamed ? (

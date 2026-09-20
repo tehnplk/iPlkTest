@@ -5,6 +5,8 @@ import assert from 'node:assert/strict'
 import { _electron as electron } from 'playwright-core'
 
 const question = process.argv[2] || 'มีผู้ป่วยทั้งหมดกี่คน ตอบสั้นๆ'
+// คำถามที่ต้องไล่หลายตาราง (เช่นงาน PCU) ใช้เวลาเกิน 3 นาทีได้ ใส่วินาทีต่อท้ายเพื่อรอนานขึ้น
+const TIMEOUT_MS = Number(process.argv[3] || 180) * 1000
 const t0 = Date.now()
 const ms = () => `[${((Date.now() - t0) / 1000).toFixed(1)}s]`
 
@@ -25,7 +27,7 @@ console.log(ms(), 'ส่งคำถาม:', question)
 
 // ปุ่มกลายเป็น "หยุด" ระหว่างทำงาน รอจนกลับมาเป็น "ส่ง" = ตอบเสร็จ
 await win.waitForSelector('.composer button.stop')
-await win.waitForSelector('.composer button[type=submit]', { timeout: 180000 })
+await win.waitForSelector('.composer button[type=submit]', { timeout: TIMEOUT_MS })
 
 const messages = win.locator('.msg')
 const count = await messages.count()
@@ -47,5 +49,7 @@ assert.ok(count >= 2, 'ต้องมีทั้งข้อความผู
 assert.ok(answer.length > 0, 'คำตอบต้องไม่ว่าง')
 assert.ok(!/^⚠/.test(answer), 'คำตอบไม่ควรเป็นข้อความ error')
 
+// ค้างหน้าต่างไว้ให้ดูผลก่อนปิด
+await new Promise((r) => setTimeout(r, 10000))
 await app.close()
 console.log('\ne2e ok')

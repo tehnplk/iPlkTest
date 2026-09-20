@@ -1,3 +1,5 @@
+import { askJev } from '../jev.mjs'
+
 // ค้นหาความรู้จากอินเทอร์เน็ต — ใช้ตอนโมเดลต้องรู้เรื่องที่ไม่ได้อยู่ในฐานข้อมูล
 // (มาตรฐานรหัส ICD/ICD-10-TM, นิยามตัวชี้วัด, ประกาศ สปสช./สธ., สูตรคำนวณทางคลินิก)
 //
@@ -24,16 +26,11 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 // ช่องว่างกว้าง 0.20 -> 0.53 เลยตั้งเพดานไว้ตรงกลาง
 //
 // ไม่เอาไปเรียงลำดับใหม่ — วัดแล้วมันแยก "ดี vs ดีกว่า" ไม่ออก ปล่อยลำดับเดิมของ DDG ไว้
-const JEV_URL = 'https://openrouter.ai/api/alpha/decisions'
-const JEV_TIMEOUT_MS = 3000
 const TRUSTED = 0.35
 
 // คืน array ของความน่าจะเป็นเรียงตาม results หรือ null = ตัดสินไม่ได้ (ไม่มีคีย์/ล่ม/ช้า)
 // ถามทุกแหล่งในคำขอเดียว — state ก้อนเดียวใช้ร่วมกัน เลยจ่ายค่า token รอบเดียว (~$0.00007)
 async function rateSources(topic, results, signal) {
-  const key = process.env.OPENROUTER_API_KEY
-  if (!key) return null
-
   // ใส่ topic ไปด้วยเพราะ "น่าเชื่อถือ" ขึ้นกับเรื่องที่ถาม — เว็บกระทรวงสาธารณสุขเชื่อได้
   // เรื่องเกณฑ์วินิจฉัย แต่ไม่ใช่เรื่องอื่น
   const state = { topic: topic || '' }
@@ -50,23 +47,11 @@ async function rateSources(topic, results, signal) {
     }
   })
 
-  try {
-    const res = await fetch(JEV_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: process.env.JEV_MODEL || 'jev-latest', state, questions }),
-      signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(JEV_TIMEOUT_MS)])
-        : AbortSignal.timeout(JEV_TIMEOUT_MS)
-    })
-    if (!res.ok) return null
-    const answers = (await res.json())?.answers ?? {}
-    const scores = results.map((_, i) => answers[`r${i}`]?.noul)
-    return scores.every((n) => typeof n === 'number') ? scores : null
-  } catch {
-    // jev ล่ม/ช้า/เน็ตหลุด ห้ามทำให้การค้นหาพังไปด้วย
-    return null
-  }
+  // jev ล่ม/ช้า/ไม่มีคีย์ = ได้ null ห้ามทำให้การค้นหาพังไปด้วย
+  const answers = await askJev(state, questions, signal)
+  if (!answers) return null
+  const scores = results.map((_, i) => answers[`r${i}`]?.noul)
+  return scores.every((n) => typeof n === 'number') ? scores : null
 }
 
 // เอา tag ออกให้เหลือข้อความที่คนอ่านได้ — script/style ต้องทิ้งทั้งก้อน ไม่ใช่แค่ถอด tag
