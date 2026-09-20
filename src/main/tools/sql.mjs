@@ -11,16 +11,69 @@ const READ = /^\s*(select|show|desc|describe|explain|with|set\s)/i
 const TMP =
   /^\s*(create\s+temporary\s+table|insert\s+into\s+`?tmp_|update\s+`?tmp_|delete\s+from\s+`?tmp_|drop\s+(temporary\s+)?table\s+(if\s+exists\s+)?`?tmp_)/i
 
-// ตัดส่วน SELECT...FROM ของทุก select ออกมา — FROM ในวงเล็บ (TRIM(x FROM y)) ไม่นับเป็นจุดจบ projection
-// ดูแค่ projection เพราะ WHERE/JOIN ON/GROUP BY ไม่ได้ส่งค่าออกมา จะใช้ cid เชื่อมตารางก็ได้
+// Preserve positions while masking strings/comments. In MySQL, -- is a comment
+// only when followed by whitespace/control; 1--1 is arithmetic. Quoted text wins
+// over comment markers. Executable comments must never disappear from inspection.
+function scanSql(sql) {
+  let text = ''
+  let scan = ''
+  for (let i = 0; i < sql.length;) {
+    const start = i
+    const quote = sql[i]
+    if (quote === "'" || quote === '"' || quote === '`') {
+      i++
+      let closed = false
+      while (i < sql.length) {
+        if (sql[i] === '\\' && quote !== '`') {
+          i += 2
+          continue
+        }
+        if (sql[i] === quote) {
+          if (sql[i + 1] === quote) {
+            i += 2
+            continue
+          }
+          i++
+          closed = true
+          break
+        }
+        i++
+      }
+      if (!closed) return { error: 'SQL มีเครื่องหมายคำพูดไม่ครบ' }
+      const token = sql.slice(start, i)
+      text += quote === '`' ? token : quote + ' '.repeat(token.length - 2) + quote
+      scan += ' '.repeat(token.length)
+    } else if (sql.startsWith('/*', i)) {
+      if (/^\/\*(?:!|m!)/i.test(sql.slice(i)))
+        return {
+          error: 'ไม่อนุญาต executable comment ใน SQL เพราะอาจซ่อนคำสั่งหรือข้อมูลส่วนบุคคล'
+        }
+      const end = sql.indexOf('*/', i + 2)
+      if (end < 0) return { error: 'SQL มีคอมเมนต์ที่ปิดไม่ครบ' }
+      i = end + 2
+      text += ' '.repeat(i - start)
+      scan += ' '.repeat(i - start)
+    } else if (
+      sql[i] === '#' ||
+      (sql.startsWith('--', i) && (sql.charCodeAt(i + 2) <= 32 || /\s/.test(sql[i + 2] ?? '')))
+    ) {
+      while (i < sql.length && sql[i] !== '\n' && sql[i] !== '\r') i++
+      text += ' '.repeat(i - start)
+      scan += ' '.repeat(i - start)
+    } else {
+      text += sql[i]
+      scan += sql[i]
+      i++
+    }
+  }
+  return { text, scan: scan.toLowerCase() }
+}
+
+// Inspect SELECT projections; WHERE/JOIN keys do not themselves leave the DB.
 function projections(sql) {
-  const low = sql
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/(--|#)[^\r\n]*/g, ' ')
-    .replace(/'(?:''|\\.|[^'])*'/g, "''")
-    .replace(/"(?:""|\\.|[^"])*"/g, '""')
-    .replace(/`([^`]*)`/g, '$1')
-    .toLowerCase()
+  const parsed = scanSql(sql)
+  if (parsed.error) return [] // checkSql/checkLeak reject malformed input first.
+  const { scan: low, text } = parsed
   const word = (i) => /[\w$]/.test(low[i] ?? '')
   const out = []
   const re = /\bselect\b/g
@@ -34,7 +87,7 @@ function projections(sql) {
         depth--
       } else if (!depth && low.startsWith('from', i) && !word(i - 1) && !word(i + 4)) break
     }
-    out.push(low.slice(re.lastIndex, i))
+    out.push(text.slice(re.lastIndex, i))
   }
   return out
 }
@@ -75,13 +128,16 @@ const LEAK_CRITERIA = {
 
 // แยก projection เป็นรายคอลัมน์ที่ระดับบนสุด (คอมมาในวงเล็บของ CONCAT/COUNT ไม่นับ)
 function splitColumns(projection) {
+  const parsed = scanSql(projection)
+  if (parsed.error) return []
+  const structural = parsed.scan
   const out = []
   let depth = 0
   let start = 0
   for (let i = 0; i < projection.length; i++) {
-    if (projection[i] === '(') depth++
-    else if (projection[i] === ')') depth--
-    else if (projection[i] === ',' && !depth) {
+    if (structural[i] === '(') depth++
+    else if (structural[i] === ')') depth--
+    else if (structural[i] === ',' && !depth) {
       out.push(projection.slice(start, i))
       start = i + 1
     }
@@ -98,19 +154,30 @@ function splitColumns(projection) {
 export async function leakingColumns(columns, sql, signal, ask = askJev) {
   const list = columns.filter(Boolean)
   if (!list.length) return []
-  const state = { sql: String(sql ?? '').replace(/\s+/g, ' ') }
-  const questions = {}
-  list.slice(0, MAX_ASK).forEach((c, i) => {
-    state[`col_${i}`] = c
-    questions[`c${i}`] = {
-      type: 'noul',
-      instructions: `col_${i}: this column of the SELECT result of the statement in sql`,
-      criteria: LEAK_CRITERIA
+  const leaking = []
+  for (let start = 0; start < list.length; start += MAX_ASK) {
+    signal?.throwIfAborted()
+    const batch = list.slice(start, start + MAX_ASK)
+    const state = { sql: String(sql ?? '').replace(/\s+/g, ' ') }
+    const questions = {}
+    batch.forEach((column, i) => {
+      state[`col_${i}`] = column
+      questions[`c${i}`] = {
+        type: 'noul',
+        instructions: `col_${i}: this column of the SELECT result of the statement in sql`,
+        criteria: LEAK_CRITERIA
+      }
+    })
+    const answers = await ask(state, questions, signal)
+    signal?.throwIfAborted()
+    for (const [i, column] of batch.entries()) {
+      const score = answers?.[`c${i}`]?.noul
+      if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1)
+        return null
+      if (score >= JEV_BLOCK) leaking.push(column)
     }
-  })
-  const answers = await ask(state, questions, signal)
-  if (!answers) return null
-  return list.filter((_, i) => (answers[`c${i}`]?.noul ?? 0) >= JEV_BLOCK)
+  }
+  return leaking
 }
 
 // jev เป็นด่านเดียวที่กันข้อมูลส่วนบุคคล ถามไม่ได้ก็ต้องไม่รัน ไม่ใช่ปล่อยผ่านเงียบๆ
@@ -132,6 +199,8 @@ const verdict = (leaking) => {
 // คำตัดสินไม่ได้ส่งขึ้นจอ — prompt กันคอลัมน์พวกนี้ไว้ก่อนแล้ว ด่านนี้แทบไม่ทำงาน
 // ที่ผู้ใช้ควรเห็นคือข้อความที่ agent ตอบกลับมาว่าดึงคอลัมน์นั้นไม่ได้ ซึ่งเห็นอยู่แล้ว
 export async function checkLeak(sql, signal, ask = askJev) {
+  const parsed = scanSql(sql)
+  if (parsed.error) return parsed.error
   if (METADATA.test(sql)) return null // SHOW/DESCRIBE คืนโครงสร้าง ไม่ใช่ข้อมูลคน ไม่ต้องจ่ายค่าถาม
   const cols = projections(sql).flatMap(splitColumns)
   return verdict(await leakingColumns(cols, sql, signal, ask))
@@ -143,7 +212,7 @@ export async function checkLeak(sql, signal, ask = askJev) {
 const MODIFIER =
   /^(?:distinct(?:row)?|all|high_priority|straight_join|sql_(?:small|big|buffer)_result|sql_no_cache|sql_calc_found_rows)\s+/i
 const isStar = (col) => {
-  let c = col.trim()
+  let c = col.trim().replace(/`([^`]*)`/g, '$1')
   let prev
   do {
     prev = c
@@ -156,6 +225,8 @@ const STAR_ERROR =
 
 // ponytail: กัน write ด้วย regex เท่านั้น ของจริงควรต่อด้วย DB user ที่มีแค่ SELECT + CREATE TEMPORARY
 export function checkSql(sql) {
+  const parsed = scanSql(sql)
+  if (parsed.error) return parsed.error
   const s = sql.trim().replace(/;+\s*$/, '')
   if (!s) return 'ไม่มีคำสั่ง'
   if (s.includes(';'))
@@ -176,20 +247,20 @@ const LIMITS = [
 
 // คำสั่งที่แตะ tmp_ ต้องวิ่งบน connection เดิมเสมอ (temp table ผูกกับ session)
 // ที่เหลือหยิบจาก pool ได้ จึงรันพร้อมกันหลาย query ในรอบเดียวได้
-export function openSql(config) {
+export function openSql(config, { driver = mysql, ask = askJev } = {}) {
   let conn = null
   let pool = null
 
   const connect = async () => {
     if (conn) return conn
-    conn = await mysql.createConnection({ ...config, dateStrings: true, supportBigNumbers: true })
+    conn = await driver.createConnection({ ...config, dateStrings: true, supportBigNumbers: true })
     for (const s of LIMITS) await conn.query(s).catch(() => {})
     return conn
   }
 
   const getPool = () => {
     if (!pool) {
-      pool = mysql.createPool({
+      pool = driver.createPool({
         ...config,
         dateStrings: true,
         supportBigNumbers: true,
@@ -210,6 +281,7 @@ export function openSql(config) {
       const c = await getPool().getConnection()
       const onAbort = () => c.destroy()
       signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
       try {
         signal?.throwIfAborted()
         const rows = []
@@ -230,7 +302,9 @@ export function openSql(config) {
     },
 
     async query(sql, signal, limit = MAX_ROWS) {
-      const bad = checkSql(sql) || (await checkLeak(sql, signal))
+      signal?.throwIfAborted()
+      const bad = checkSql(sql) || (await checkLeak(sql, signal, ask))
+      signal?.throwIfAborted()
       if (bad) return { error: bad }
 
       const session = isTemp(sql)
@@ -240,8 +314,10 @@ export function openSql(config) {
         if (session) conn = null
       }
       signal?.addEventListener('abort', onAbort, { once: true })
+      if (signal?.aborted) onAbort()
 
       try {
+        signal?.throwIfAborted()
         const [result, fields] = await c.query({ sql, rowsAsArray: true })
         // DDL/DML ไม่มี fields กลับมา
         if (!fields) return { columns: [], rows: [], rowCount: result.affectedRows ?? 0 }

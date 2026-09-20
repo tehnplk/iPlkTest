@@ -5,9 +5,11 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
-import { askAgentAi, closeAgent, MODELS, buildSystem } from './agent-ai.mjs'
+import { askAgentAi, closeAgent, MODELS, buildSystem, reviseAgentAnswer } from './agent-ai.mjs'
+import { finalizeAnswer } from './answer-review.mjs'
 import { db as hospitalDb } from './tools/sql.mjs'
 import { appendPersonDetails } from './person-details.mjs'
+import { createAgentTurns } from './agent-turn.mjs'
 
 function createWindow() {
   // Create the browser window.
@@ -53,28 +55,29 @@ app.whenReady().then(async () => {
   ipcMain.handle('convos:delete', (_e, id) => db.remove(id))
   ipcMain.handle('convos:archive', (_e, id, on) => db.archive(id, on))
 
-  // ปุ่มหยุด: ยกเลิกทั้ง request ที่ค้างและ query ที่กำลังรัน
-  let running = null
-  ipcMain.handle('agent:stop', () => running?.abort())
+  const turns = createAgentTurns({
+    buildSystem,
+    run: askAgentAi,
+    finalize: (answer, messages, options) =>
+      finalizeAnswer(answer, messages, {
+        ...options,
+        revise: (draft, reason, signal) =>
+          reviseAgentAnswer(messages, draft, reason, { ...options, signal })
+      }),
+    enrich: (answer, signal) => appendPersonDetails(answer, hospitalDb.personDetails, signal),
+    downloadsDir: app.getPath('downloads')
+  })
+  ipcMain.handle('agent:stop', (_e, turnId) => turns.stop(turnId))
   ipcMain.handle('file:open', (_e, path) => shell.openPath(path))
   ipcMain.handle('agent:models', () => MODELS)
-
-  ipcMain.handle('agent:send', async (e, messages, model) => {
-    running = new AbortController()
-    const signal = running.signal
-    // onStep = sql ที่กำลังรัน, onDelta = ตัวอักษรที่โมเดลพิมพ์ ส่งให้ UI โชว์สดๆ
-    const run = askAgentAi(messages, {
-      model,
-      onStep: (s) => e.sender.send('agent:step', s),
-      onDelta: (d) => e.sender.send('agent:delta', d),
-      onJev: (note) => e.sender.send('agent:jev', note),
-      signal,
-      instructions: await buildSystem(),
-      downloadsDir: app.getPath('downloads')
-    })
-    return run
-      .then((answer) => appendPersonDetails(answer, hospitalDb.personDetails, signal))
-      .finally(() => (running = null))
+  ipcMain.handle('agent:send', (e, request) => {
+    const stop = () => turns.stop(request.turnId)
+    e.sender.once('destroyed', stop)
+    return turns
+      .send(request, (type, value) => {
+        if (!e.sender.isDestroyed()) e.sender.send(`agent:${type}`, value)
+      })
+      .finally(() => e.sender.removeListener('destroyed', stop))
   })
 
   // Set app user model id for windows

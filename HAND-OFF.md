@@ -1,175 +1,101 @@
-# HAND-OFF
+# iPlkTest — ส่งต่องาน Agent / Tool Calling / Privacy
 
-สรุปงานเซสชัน 19 ก.ย. 2569 บน `spike/openai-agents` — เขียนไว้ให้คนที่มารับงานต่อ (หรือเซสชันใหม่)
-อ่าน 5 นาทีแล้วทำงานต่อได้โดยไม่ต้องไล่ประวัติแชท
+อัปเดต 20 กันยายน 2569 · Workspace `E:\Electron\iPlkTest`
+Branch `spike/openai-agents` · ฐานก่อนเริ่มงาน `d5cd278`; ดู commit ที่รวมงานนี้จาก `git log -1`
 
-## สถานะ
+## เริ่มต่อจากตรงนี้
 
-`npm test` 9/9 · `npm run approval` ผ่าน · lint clean · e2e ที่รันไว้ผ่านทุกเคส
+ผู้ใช้ให้ปรับสถาปัตยกรรม Agent และ Tool Calling ทั้งสามส่วน จากนั้นให้เพิ่ม Jev ตรวจคำตอบสุดท้าย ทดสอบ E2E แบบแหกกฎ privacy และอุดช่องโหว่ที่พบ งานเหล่านี้เสร็จแล้ว หลังทำ handoff ผู้ใช้สั่ง commit/push งานนี้บน branch เดิม ไม่มีคำสั่ง deploy
 
-ทุกอย่างในเอกสารนี้ทดสอบกับฐานจริง `hos_07547` (MySQL, 6,584 ตาราง) และแอปจริงผ่าน Playwright
-ไม่ใช่การอนุมานจากโค้ด
+โค้ด เทสต์ และเอกสารของเซสชันนี้รวมอยู่ใน commit ส่งต่องาน ตรวจ `git status --short` ก่อนทำต่อและอย่า reset/clean งานอื่นทิ้ง โดย `.claude/skills/hosxp-schema.lnk` เป็นไฟล์ untracked ที่มีอยู่ก่อนเริ่มงานนี้ ไม่ใช่ไฟล์ที่สร้างในเซสชันนี้
 
-## สิ่งที่เปลี่ยนในเซสชันนี้
+ผู้ใช้ขอให้ตอบภาษาไทยไว้แล้ว ใช้ไทยต่อ อ่าน `AGENTS.md` และคำสั่งเฉพาะโปรเจกต์ก่อนทำงาน ตั้ง PowerShell output เป็น UTF-8; ถ้าส่ง here-string เข้า Python/Node ใช้ `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)` เพื่อไม่ให้ BOM ปนเป็นอักขระแรกของสคริปต์
 
-### 1. tool `web_search` (ใหม่)
+เอกสารนี้แทน handoff วันที่ 19 ก.ย. ซึ่งระบุว่า Jev เหลือเพียง web_search, มี `npm run approval` และ tests 9 ไฟล์ ข้อมูลเหล่านั้นล้าสมัยแล้ว ประเด็น memory/credential ที่เคยบันทึกในเอกสารเก่ายังไม่ได้ตรวจซ้ำหรือแก้ในงานนี้; หากต้องติดตาม ให้อ่านเวอร์ชันก่อนหน้าจาก Git
 
-`src/main/tools/web.mjs` — ค้นเว็บ + อ่านหน้าเว็บเป็นข้อความ
+## แผนที่สำหรับอ่านโค้ด
 
-- ค้นด้วยการขูดหน้า **DuckDuckGo lite** ฟรี ไม่ต้องขอคีย์ เทียบกับ web plugin ของ OpenRouter
-  ที่คิด $0.0078/ครั้ง แล้วได้ผลอันดับ 1 เหมือนกัน — แลกกับความเปราะ ถ้าเขาเปลี่ยน HTML หรือบล็อก IP ก็พัง
-  **ย้ายไป Brave/Tavily ให้แก้แค่ฟังก์ชัน `search()` ตัวเดียว** รูปร่างผลลัพธ์เหมือนกัน
-- อ่าน PDF ไม่ได้ (บอกตรงๆ ใน error) — เอกสารมาตรฐานของกรมฯ ส่วนใหญ่เป็น PDF จึงเป็นข้อจำกัดที่เจ็บจริง
-- `Jev` คัดแหล่งที่ไม่น่าเชื่อถือทิ้งก่อนส่งเข้าโมเดล (ดูหัวข้อถัดไป)
+ใช้ `CONTEXT.md` สำหรับศัพท์ที่ตกลงไว้ และ Git diff สำหรับรายละเอียดการแก้ ไม่ต้องออกแบบใหม่จากศูนย์
 
-### 2. Jev (TypeSafe System One) — เหลือจุดเดียว
-
-ทดลองวางไว้ 3 จุดแล้วถอดออก 2 เหลือแต่ใน `web_search`
-
-| เคยลอง | ผล |
+| เรื่อง | จุดเริ่มอ่าน |
 | --- | --- |
-| เลือก tool ต่อสเต็ป (`prepareStep`) | **พัง** — ชี้ `sql` ซ้ำ 3 รอบ `render_chart` ไม่เคยถูกเปิด โมเดลไปบอกผู้ใช้ว่า "วาดกราฟไม่ได้" |
-| ให้คะแนน schema ตอน `SHOW COLUMNS` | ใช้ได้แต่ไม่เคยเปลี่ยนผลลัพธ์ — ถอดออกตามที่ผู้ใช้สั่ง |
-| ด่าน approval (query หนักไหม) | ใช้ได้จริง จับ `select hn, fname, lname from patient` ที่ regex ปล่อยผ่าน — แต่ถอดออกตามที่ผู้ใช้สั่ง |
-| **คัดแหล่งในผลค้นเว็บ** | **ใช้อยู่** |
+| เจ้าของเทิร์น การหยุด และลำดับ finalize → enrich | `src/main/agent-turn.mjs` |
+| จับคู่ toolCallId เลือกผลแสดง เก็บงานที่เสร็จแล้วและ replay เมื่อหยุด | `src/main/tool-run.mjs` |
+| ตรวจคำตอบด้วย Jev, เลือกหลักฐาน, numeric guard, จำกัดการแก้ไข | `src/main/answer-review.mjs` |
+| SDK runner / AUTO routing / แก้คำตอบโดยปิด tools | `src/main/agent-ai.mjs` |
+| ประกอบ dependencies และ IPC | `src/main/index.js`, `src/preload/index.js` |
+| progress ติดกับ conversation/turn เดิม, กัน stale event, save failure | `src/renderer/src/App.jsx` |
+| ตรวจ privacy, lexer, query, database adapter | `src/main/tools/sql.mjs` |
+| เติมข้อมูลบุคคลภายหลัง โดยไม่ปน model replay | `src/main/person-details.mjs` |
 
-เกณฑ์ที่ได้จากการวัด: **Jev เก่งกับคำถามที่ตอบได้จากข้อความที่ส่งไปให้ แต่เดาเมื่อคำถามต้องรู้ข้อมูลข้างนอก**
+## ข้อตกลงที่ผู้ใช้ยืนยันแล้ว
 
-- คัดแหล่ง (ดู url + title): content farm 0.04-0.20 vs `dtam.moph.go.th` 0.92 → แยกขาด ใช้เพดาน 0.35
-- "0 แถวนี้เพราะ query ผิดไหม": ทุกเคสกอง 0.30-0.53 → **ใช้ไม่ได้ อย่าเสียเวลาลองซ้ำ**
-- Jev อ่านไทยพลาดชัด confidence ตกจาก 1.0 เหลือ 0.35 ในเคสเดียวกัน → **criteria ต้องเขียนอังกฤษ**
-- model id ที่ใช้ได้คือ `jev-latest` — `typesafe/jev-latest` ตอบ 400
-- endpoint คือ `POST https://openrouter.ai/api/alpha/decisions` **ผ่าน LiteLLM proxy ไม่ได้**
+- SQL ต้องตรวจทุก projected expression แบ่งชุดละ 20; คะแนนหาย ไม่เป็นตัวเลข นอกช่วง หรือ Jev ใช้ไม่ได้ ให้หยุดก่อน query
+- หนึ่ง active turn ทั้งแอป การเปลี่ยนห้องต้องไม่ย้าย progress ไปแสดงผิดห้อง
+- Stop เก็บข้อความบางส่วนกับผลเครื่องมือที่เสร็จแล้ว; replay ไม่ใส่ tool call ที่ยังไม่มีผล และแสดงสถานะ stopped
+- ผลจาก memory/web ไม่ทับตาราง กราฟ หรือไฟล์ที่สำเร็จ ข้อตกลงเดิมให้เลือกผลสำเร็จล่าสุดถูกขยายภายหลัง: final review เลือกผลเก่าที่ตรงกับคำตอบได้
+- Jev ตรวจคำตอบก่อนเติมข้อมูลบุคคล; ไม่ส่งข้อมูลที่เติมจาก person lookup เข้า reviewer
+- ถ้าข้อความผิด ให้แก้ได้หนึ่งครั้งโดย **ไม่เรียก tools ซ้ำ** แล้วตรวจซ้ำ รวมไม่เกินสอง checks; ถ้าแค่เลือกตารางผิด เปลี่ยนตารางและตรวจซ้ำได้โดยไม่สร้างคำตอบใหม่
+- ผลตรวจเป็น `verification.status`: `verified`, `failed`, `unavailable`; สองสถานะหลังต้องมีข้อความเตือน ไม่ตีความว่าผ่าน
 
-### 3. prompt.md — ความรู้เรื่องตาราง
+Jev ยังทำงานห้าบริบท: AUTO model routing, SQL privacy, web source filtering, person lookup selection และ final answer review อ่านเกณฑ์จริงจากไฟล์ข้างต้นกับ `jev.mjs` อย่าอ้างคำอธิบายว่าเหลือจุดเดียวจาก handoff เก่า
 
-วัดแล้วว่า **โมเดลไม่รู้จัก HOSxP เลย** ความรู้ทั้งหมดมาจาก prompt:
+## เหตุการณ์สำคัญและผลยืนยัน
 
-| โมเดล | ไม่มี prompt | มี prompt |
-| --- | --- | --- |
-| `z-ai/glm-5.3-flash` | 3/15 | 15/15 |
-| `qwen/qwen3.8-flash` | 1/15 | 15/15 |
-| `deepseek/deepseek-v4-flash-0731` | 0/15 | 13/15 |
+### จำนวนคนกับจำนวนแถว
 
-เพิ่มสองส่วน:
+Live E2E ก่อนเพิ่ม final review พบคำตอบ 6,612 HN ไม่ซ้ำ แต่ตารางเป็น 6,615 แถว ตรวจ tool history แล้วทั้งสองตัวเลขมี SQL รองรับ (`COUNT(DISTINCT hn)` เทียบกับ `COUNT(*)`) จึงเป็นปัญหาเลือกผลแสดง ไม่ใช่หลักฐานว่า Agent แต่งตัวเลข
 
-- **แผนที่ตารางตามโมดูล** 70 ตารางที่ยืนยันแล้วว่ามีจริงในฐานนี้ → เคส "ฝากครรภ์" **60.1s → 20.9s**
-  (จาก 6 `SHOW COLUMNS` เหลือ 0 เพราะไม่ต้องไล่เดาชื่อ) ต้นทุน +504 token ต่อ request
-- **"ห้ามเดารหัส ให้ถามทะเบียนเสมอ"** — join `icd101` ก่อนสรุป, ดูคอลัมน์ธงใน `drugitems` แทนการเดา icode
+ไม่ได้ตรวจว่าแถวส่วนต่างมาจาก HN ซ้ำหรือ NULL อย่าสรุปสาเหตุจากส่วนต่างอย่างเดียว
 
-### 4. ประวัติแชท 30 วัน + คลัง
+หลังเพิ่ม final review: live E2E ใช้แอป/โมเดล/ฐานจริงผ่านในประมาณ 6.7 วินาที คำตอบและตารางเป็น 6,612 HN ไม่ซ้ำตรงกัน อีกการทดสอบส่ง fixture สองผลเดิมให้ **Jev จริง** ยืนยันว่าเลือกผล HN ไม่ซ้ำและได้ `verified`, `checks: 2` ตัวเลขนี้เป็นผล ณ เวลาทดสอบ ไม่ใช่ยอดปัจจุบันที่รับรองตลอดไป
 
-- `db.mjs`: `KEEP_DAYS = 30`, `purgeEmpty()` → `purge(days)`, คอลัมน์ `archived`
-  (`ADD COLUMN IF NOT EXISTS` ฐานเก่าอัปเอง) ห้องในคลังไม่หมดอายุ · นับจาก `updated_at` ไม่ใช่วันที่สร้าง
-- UI: แท็บ `ประวัติแชท` / `คลัง` พร้อมตัวนับ, ปุ่มกล่อง archive ต่อห้อง
-- **ลบ: เลิกใช้ `window.confirm`** กดถังขยะครั้งแรก → ไอคอนเปลี่ยนเป็น `Check` สีแดง กดซ้ำถึงลบ
-  เอาเมาส์ออกจากแถวยกเลิกเอง
-- ไอคอนเปลี่ยนมาใช้ `lucide-react` (`Archive` / `ArchiveRestore` / `Check` / `Trash2`)
+### Privacy bypass
 
-### 5. สกิล `hosxp-schema`
+พบและแก้สามแบบที่ทำให้คอลัมน์ cid หลบการตรวจได้:
 
-`.agents/skills/hosxp-schema/SKILL.md` — อ้างอิงเต็มสำหรับ **Claude Code ตอนแก้โค้ดโปรเจกต์นี้**
-ไม่ใช่ของที่แอปโหลด (แอปไม่มีระบบ skill) สร้างจากเอกสาร BMS Session API + ตรวจกับฐานจริง
+1. MySQL executable comment เช่น `SELECT /*!50000 cid */ FROM patient LIMIT 1`
+2. `SELECT 1--1 AS safe, cid FROM patient LIMIT 1` — `--1` เป็นเลขลบ ไม่ใช่คอมเมนต์
+3. `SELECT '--' AS note, cid FROM patient LIMIT 1` — marker อยู่ใน string
 
-แบ่งหน้าที่: `SKILL.md` = อ้างอิงเต็ม · `prompt.md` = ชุดปฏิบัติการที่แอปแบกไปทุกเทิร์น
+ก่อนแก้ ทั้งสามเคสไปถึงฐานจำลองและส่ง synthetic sentinel ให้โมเดล fixture ได้ หลังแก้ `scanSql` แยก quoted text/identifiers กับ comments ตามตำแหน่ง, ปฏิเสธ executable comments ทั้ง `/*!...*/` และ `/*M!...*/`, ตรวจ quote/comment ที่ปิดไม่ครบ และยังบล็อก wildcard ที่มี quoted qualifier เช่น ``SELECT `p`.*``
 
-## เรื่องค้าง — อ่านก่อนทำงานต่อ
+หลักฐานและ payload อยู่ใน `test/privacy-e2e.test.mjs` กับ `test/sql-lexing.test.mjs` ไม่ได้ใช้ข้อมูลผู้ป่วยจริงในการโจมตี
 
-### ต้องตัดสินใจ: ความจำกลางรายการที่ 4 ผิด
+## การทดสอบและขอบเขตหลักฐาน
 
-ในตาราง `memory` มีรายการนี้ และมัน **ถูกแนบเข้า system prompt ทุกเทิร์น**:
+| คำสั่ง | ผลที่รันแล้ว / สิ่งที่ทดสอบจริง |
+| --- | --- |
+| `npm test` | ผ่านทั้งชุด 12 test scripts; มี regression ด้าน batching/คะแนนหาย, correlation, lifecycle, final review และ lexer |
+| `npm run lint` | ผ่านหลังแก้ regex ให้ไม่ติด no-control-regex |
+| `npm run build` | ผ่าน; มี warning เดิมเรื่อง store.mjs ถูก import ทั้ง static/dynamic |
+| `npm run test:agent-ui` | isolated Electron UI ผ่าน conversation ownership, stale events, stop, completed result และ persisted replay; runner จำลอง |
+| `npm run build` แล้ว `npm run e2e` | live app + model + database ผ่านคำถามนับผู้ป่วยหลังเพิ่ม final review; เป็น smoke test ก่อนแก้ lexer privacy รอบล่าสุด |
+| `npm run test:privacy-e2e` | ผ่าน 10/10: 9 attack cases บล็อกก่อนเรียกฐาน, aggregate control ทำงาน; Electron/IPC/SDK/tools และ **Jev จริง**, แต่ model tool calls กับ MySQL เป็น fixtures |
 
-> รหัส dx แผนไทยในระบบนี้ = `ovstdiag.icd10` ขึ้นต้นด้วย `'ผ'` (เช่น ผ018);
-> ยาแผนไทย/สมุนไพร = icode 1500034 นวดแผนไทย, 1500035 อบสมุนไพร, ...
+`test:agent-ui` และ `test:privacy-e2e` รวม build อยู่แล้ว ใช้ isolated userData และลบ temp ของตัวเอง ส่วน live `e2e` ใช้ userData ปกติและเขียนประวัติแชท ต้องไม่มีแอปอีก instance ล็อก PGlite อยู่
 
-ผิดทั้งสองท่อน ตรวจกับฐานแล้ว:
+Privacy E2E จงใจบังคับ model fixture ให้เรียก tool อันตราย เพื่อทดสอบด่านในโค้ด ไม่ใช่ทดสอบว่าโมเดลจริงจะยอมทำตาม jailbreak prompt หรือไม่ อย่าอ้างผล 10/10 ว่าป้องกันทุกวิธีหรือเป็นการรับรองความปลอดภัยทั้งหมด
 
-- `ผ018` ไม่มีในทะเบียน `icd101` และทั้ง 20 แถวลงวันเดียวกัน (18 ม.ค. 2564) = คีย์ผิด
-  ของจริงตาม ICD-10-TM คือช่วง U (จาก dtam.moph.go.th) ซึ่งฐานนี้มี **22,515 รายการ**
-- icode ที่ลิสต์ไว้เป็น **หัตถการ** ไม่ใช่ยา และไม่มีตัวไหนมี `ttmt_code`
-  ยาแผนไทยจริงมี 5 ตัว (ฟ้าทะลายโจร, ขิง, ขมิ้นชัน, มะขามป้อม, ลูกกลอนฟ้าทะลายโจร)
+`sql.test.mjs` มี negative connection test ไป `127.0.0.1:1`; ไม่ต้องมีฐานโรงพยาบาลจริง และเทสต์สมมติว่าไม่ได้ตั้ง OPENROUTER_API_KEY ใน process ที่รัน ไม่ควรกล่าวว่าชุด unit ไม่มี network attempt เลย
 
-กฎใหม่ใน prompt กันของใหม่ได้ แต่**ไม่ได้ย้อนไปลบของเก่า** และเพราะกฎ "อยู่ในความจำแล้วไม่ต้องค้นใหม่"
-มันจะไม่มีวันถูกแก้เอง → ให้ผู้ใช้ (เจ้าของโดเมน) ยืนยันว่าช่วง U ตัวไหนคือแผนไทยจริง แล้วค่อยเขียนทับ
+## ข้อจำกัดและจุดต่อยอดที่ยังไม่ได้ทำ
 
-### ความปลอดภัย
+- `test/e2e.mjs` เดิมตรวจข้อความอย่างหยาบ ไม่ assert `verification` หรือจับคู่ตัวเลข/นิยามกับตารางโดยตรง การยืนยันค่าครั้งนี้อาศัยอ่านผลและตรวจ tool history เพิ่ม
+- `countMismatch` เป็น guard เฉพาะ SELECT COUNT ผลหนึ่งแถวหนึ่งคอลัมน์ ไม่ใช่ตัวตรวจเลข/ร้อยละ/ช่วงเวลาทั่วไป
+- Reviewer ใช้ excerpt ของผลลัพธ์ (ผ่าน fit และตัดข้อความต่อผล); Jev เป็น probabilistic ไม่ใช่หลักฐานทางการว่าคำตอบถูกทั้งหมด
+- Lexer นี้ไม่ใช่ full MySQL parser; ยังไม่ได้ทดสอบ SQL modes/dialect ทุกแบบ หรือทำ security audit ครอบคลุมทุก tool
+- history ยังไม่มีงบ context รวม/compaction; งานนี้ไม่ได้แก้
+- ผู้ใช้อนุญาต commit/push งานนี้แล้ว; ไม่มีการ deploy หรือแก้ schema/data production
 
-`OPENROUTER_API_KEY` ใน `.env` (gitignored ไม่หลุดขึ้น git) ถูกวางผ่านแชท — **ควร revoke ที่ openrouter.ai**
+## Suggested skills
 
-### หนี้ที่จดไว้แล้ว
+เรียก skill ตามงานที่ทำต่อ ไม่ต้องโหลดทั้งหมด:
 
-- `history.mjs` — replay ทุกเทิร์นไม่มีเพดานรวม **ยังไม่มี compaction** แชทยาวจะชน context แล้วพัง
-  ตัวนี้จะกัดก่อนเพื่อน
-- `deepseek-v4-flash` format หลุด — เคยคาย JSON tool call ปนออกมาเป็นข้อความ และมีคำรัสเซียปนในคำตอบไทย
-  ถ้าเจอบ่อยให้สลับไป `glm-5.3-flash` หรือ `qwen3.8-flash` ที่ได้ 15/15
-- `web_search` อ่าน PDF ไม่ได้ — ต้องเพิ่ม lib แยก (เช่น pdf-parse)
+- `ai-sdk`: ก่อนแก้ SDK stream/agent/tool behavior อ่าน version-matched docs ใน `node_modules/ai/docs` และ source; ตอนนี้แพ็กเกจใน repo เป็น AI SDK 7
+- `codebase-design`: ถ้าจะเปลี่ยนเจ้าของ turn, result selection หรือ interface ของ module
+- `hosxp-schema` และ `db-cli`: เฉพาะเมื่อจำเป็นต้องตรวจ schema หรือ query HOSxP จริง; ใช้ `db-cli --help` และอ่านเฉพาะข้อมูลที่จำเป็น
+- `diagnosing-bugs`: ถ้า regression กลับมาหรือ live/model behavior ไม่ตรงกับ fixture
+- `handoff`: ใช้สรุปส่งต่องาน; ถ้าผู้ใช้ระบุไฟล์ปลายทาง ให้บันทึกตามที่ผู้ใช้ระบุ เอกสารนี้บันทึกลง `HAND-OFF.md` ตามคำขอ
 
-## กับดักของสภาพแวดล้อมนี้ (เสียเวลาไปเยอะ)
-
-Bash tool ในเครื่องนี้**กลืน backslash** ใน heredoc — `\\s` กลายเป็น `\s`, `\\b` กลายเป็นอักขระ
-backspace (0x08) ฝังลงไฟล์เงียบๆ จน regex เพี้ยนโดยไม่มี error
-
-ใช้ Edit/Write tool กับโค้ดที่มี regex หรือ escape เสมอ อย่าใช้ `python - <<'PY'` / `node -e` แก้ไฟล์
-ถ้าจำเป็นให้เลี่ยงด้วย `String.fromCharCode(92)` และตรวจด้วย `git diff` หลังทุกครั้ง
-
-## การทดสอบ
-
-### unit — เร็ว ใช้ระหว่างแก้โค้ด
-
-```bash
-npm test          # 9 ไฟล์ ไม่แตะเน็ต ไม่แตะโมเดล (sql.test ต้องมี MySQL)
-```
-
-`web.test.mjs` กับ `db.test.mjs` แทน `globalThis.fetch` และใช้ PGlite `memory://` เลยรันได้ทุกที่
-
-### e2e — เปิด Electron จริง คุยกับโมเดลจริง query ฐานจริง
-
-ต้องมีก่อน: `.env` ตั้งครบ (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODELS`, `DB_*`),
-LiteLLM proxy รันอยู่, MySQL ต่อได้ และ **ปิดแอปที่เปิดค้างให้หมด**
-(PGlite ล็อกโฟลเดอร์ userData ไว้ตัวเดียว เปิดซ้อนจะพังทันที)
-
-```bash
-npm run build && node test/e2e.mjs 'มีผู้ป่วยทั้งหมดกี่คน ตอบสั้นๆ'
-npm run build && npm run approval        # ทางขออนุมัติ: กดอนุมัติ + กดปฏิเสธ
-```
-
-**ต้อง `npm run build` ทุกครั้งก่อนรัน** — ทั้งสองตัวเปิดจาก `out/` ไม่ใช่ `src/`
-แก้โค้ดแล้วลืม build จะได้ผลของรอบก่อนแบบเงียบๆ (เสียเวลาไปกับเรื่องนี้มาแล้ว)
-
-`e2e.mjs` รับคำถามเป็น argument, ต่อ stdout ของ main process มาให้ด้วย (จะเห็นล็อก `[jev] ...`)
-แล้ว assert ว่า: มีทั้งข้อความผู้ใช้และคำตอบ, คำตอบไม่ว่าง, ไม่ขึ้นต้นด้วย `⚠`
-พิมพ์ SQL ที่ใช้ จำนวนช่องในตาราง และคำตอบเต็มออกมาให้อ่าน ใช้เวลา 10-60 วินาทีต่อคำถาม
-
-### เช็ค UI เฉพาะกิจ — วางสคริปต์ใน `test/` เท่านั้น
-
-เวลาจะตรวจอะไรที่ยังไม่มีเทสต์ (ปุ่มใหม่ ไอคอน แท็บ) ให้เขียนสคริปต์ Playwright ชั่วคราว
-แล้วลบทิ้ง — แต่**ต้องวางไว้ใน `test/`** จะวางใน temp dir ไม่ได้ เพราะ node resolve
-`playwright-core` จากตำแหน่งไฟล์ ไม่ใช่ cwd
-
-```bash
-cat > test/_check.tmp.mjs <<'EOF'
-import { _electron as electron } from 'playwright-core'
-const env = { ...process.env }
-delete env.ELECTRON_RUN_AS_NODE     // ที่ติดมาจาก terminal ของ VSCode ทำให้ไม่เปิดหน้าต่าง
-const app = await electron.launch({ args: ['.'], env })
-app.process().stdout?.on('data', (d) => process.stdout.write(String(d)))
-const win = await app.firstWindow()
-await win.waitForSelector('.composer textarea')
-// ...ตรวจสิ่งที่ต้องการ...
-await win.screenshot({ path: 'shot.png', clip: { x: 0, y: 0, width: 260, height: 220 } })
-await app.close()
-EOF
-node test/_check.tmp.mjs; rm -f test/_check.tmp.mjs
-```
-
-อ่าน class ของไอคอน lucide ได้ตรงๆ (`lucide lucide-archive-restore`) ใช้ยืนยันสถานะ UI
-ได้แม่นกว่าดูภาพ ส่วน `screenshot` ไว้ดูว่าจัดวางออกมาหน้าตาเป็นยังไงจริงๆ
-
-### วัดโมเดล
-
-สคริปต์ quiz 15 คำถามที่ใช้วัดตาราง HOSxP เป็นไฟล์ชั่วคราว ลบไปแล้ว ถ้าจะทำใหม่:
-ยิง `generateText` ต่อโมเดล เทียบ 2 เงื่อนไข (มี/ไม่มี `instructions: prompt.md`)
-แล้วเทียบคำตอบกับเฉลยที่ยืนยันกับฐานแล้ว
-
-**ต้องตั้ง `maxOutputTokens` อย่างน้อย ~400** — ทั้งสามโมเดลเป็น reasoning model
-ตั้ง 40 แล้ว reasoning กินหมด `textTokens: 0` คำตอบว่างเปล่าโดยไม่มี error
+ถ้าจะทำต่อโดยยังไม่มีคำขอใหม่ ให้เริ่มจากอ่าน diff และข้อจำกัดข้างต้น ไม่ต้องรัน benchmark/live query เพิ่มเพียงเพื่อทำซ้ำหลักฐานที่มีแล้ว

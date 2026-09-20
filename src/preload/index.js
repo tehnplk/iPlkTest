@@ -17,9 +17,9 @@ const api = {
   },
   openFile: (path) => ipcRenderer.invoke('file:open', path),
   agent: {
-    send: (messages, model) => ipcRenderer.invoke('agent:send', messages, model),
+    send: (request) => ipcRenderer.invoke('agent:send', request),
     models: () => ipcRenderer.invoke('agent:models'),
-    stop: () => ipcRenderer.invoke('agent:stop'),
+    stop: (turnId) => ipcRenderer.invoke('agent:stop', turnId),
     onStep: on('agent:step'),
     onJev: on('agent:jev'),
     onDelta: on('agent:delta')

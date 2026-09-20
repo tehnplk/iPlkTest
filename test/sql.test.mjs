@@ -53,8 +53,11 @@ assert.match(
   await checkLeak('SELECT passport_no FROM patient', null, async () => null),
   /ตรวจข้อมูลส่วนบุคคลไม่ได้/
 )
-// ตอบมาแต่ไม่มีคะแนนของคอลัมน์ = ถือว่าไม่รั่ว (ได้ answers มาแล้ว แค่ค่าหาย)
-assert.equal(await checkLeak('SELECT sex FROM patient', null, async () => ({})), null)
+// Missing scores are incomplete decisions, not permission to execute.
+assert.match(
+  await checkLeak('SELECT sex FROM patient', null, async () => ({})),
+  /ตรวจข้อมูลส่วนบุคคลไม่ได้/
+)
 // แต่ SHOW/DESCRIBE ไม่ได้ถาม jev อยู่แล้ว ล่มก็ยังรันได้
 assert.equal(await checkLeak('SHOW TABLES', null, async () => null), null)
 // SHOW/DESCRIBE ไม่ต้องจ่ายค่าถาม

@@ -3,7 +3,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { askJev, HOSXP } from './jev.mjs'
 import { ToolLoopAgent, tool, jsonSchema, isStepCount } from 'ai'
-import { db, sqlTool, isTemp } from './tools/sql.mjs'
+import { db, sqlTool } from './tools/sql.mjs'
 import { excelTool } from './tools/excel.mjs'
 import { apiTool } from './tools/api.mjs'
 import { memoryTool } from './tools/memory.mjs'
@@ -13,6 +13,7 @@ import { webTool } from './tools/web.mjs'
 // ชื่อ tool ที่โมเดลเห็น มาจาก t.name ของแต่ละไฟล์ — เพิ่ม tool ใหม่แก้ที่เดียว
 const TOOLS = [sqlTool, excelTool, apiTool, memoryTool, chartTool, webTool]
 import { fit } from './fit.mjs'
+import { collectToolRun } from './tool-run.mjs'
 import { toModelMessages } from './history.mjs'
 import { store } from './store.mjs'
 import SYSTEM_PROMPT from './prompt.md?raw'
@@ -119,7 +120,7 @@ const wrap = (t, ctx) =>
 
 export async function askAgentAi(
   messages,
-  { instructions, model, downloadsDir, onStep, onDelta, onJev, signal } = {}
+  { instructions, model, downloadsDir, onStep, onDelta, onJev, signal, allowTools = true } = {}
 ) {
   if (!BASE_URL)
     throw new Error(
@@ -131,72 +132,40 @@ export async function askAgentAi(
   // ผู้ใช้เลือกเองได้ ถ้าไม่เลือก (AUTO) ให้ jev ดูคำถามแล้วจับคู่โมเดลตามความยาก
   const picked = MODELS.includes(model) ? model : await chooseModel(ask, signal, onJev)
 
+  signal?.throwIfAborted()
   const agent = new ToolLoopAgent({
     model: llm(picked),
     instructions,
     stopWhen: isStepCount(30),
     // ask = คำถามผู้ใช้เทิร์นนี้ ส่งให้ tool ใช้ได้ (web_search เอาไปให้ jev คัดผลค้น)
-    tools: Object.fromEntries(TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask })]))
+    tools: allowTools
+      ? Object.fromEntries(TOOLS.map((t) => [t.name, wrap(t, { downloadsDir, ask })]))
+      : {}
   })
 
-  // ทุกอย่างที่งอกหลังจุดนี้คือของเทิร์นนี้ เก็บไว้ให้เทิร์นหน้า replay ต่อ
-  const baseline = convo.length
-
-  let step = null
-  // คำสั่งสำรวจ (DESCRIBE/SHOW) ไม่ควรกลายเป็นตารางที่โชว์ให้ผู้ใช้ ถ้ามี query จริงให้ใช้อันนั้น
-  let dataStep = null
-  const script = []
-
-  const run = async (input) => {
-    // v7: stream() คืน promise ต้อง await ก่อนถึงจะได้ fullStream (ตามเอกสารที่มากับแพ็กเกจ)
-    const result = await agent.stream({ messages: input, abortSignal: signal })
-    for await (const part of result.fullStream) {
-      // fullStream ไม่ throw — API พัง (คีย์ผิด/429/โมเดลหาย) มาเป็น part แล้ว text จะว่างเปล่า
-      // ไม่โยนต่อ = ผู้ใช้เห็นคำตอบว่างโดยไม่รู้ว่าพัง
-      if (part.type === 'error') throw part.error
-      if (part.type === 'text-delta') onDelta?.(part.text ?? '')
-      if (part.type === 'tool-call') {
-        const sql = part.input?.sql
-        // tool ที่ไม่ได้รับ sql (memory/rest_api) ต้องมีป้ายบอกว่าทำอะไรกับอะไร
-        // ไม่งั้นช่องบนจอขึ้นแค่ชื่อ tool ลอยๆ
-        const label = sql ?? `${part.toolName}: ${Object.values(part.input ?? {}).join(' ')}`
-        onStep?.({ sql: label })
-        step = { sql: label, result: null }
-        // จองที่ไว้ตามลำดับที่เรียก แต่ยังไม่รู้ว่าผ่านไหม ต้องรอ tool-result มาติ๊ก ok
-        if (isTemp(sql) && !script.some((s) => s.sql === sql))
-          script.push({ id: part.toolCallId, sql, ok: false })
-      }
-      if (part.type === 'tool-result') {
-        step = { sql: step?.sql ?? '', result: part.output }
-        if (!/^\s*(show|desc|describe|explain)\b/i.test(step.sql)) dataStep = step
-        // คำสั่งที่ถูกปฏิเสธ (เช่น CREATE TABLE ที่ไม่ใช่ TEMPORARY) ต้องไม่หลุดเข้าสคริปต์
-        // ที่ผู้ใช้ก๊อปไปรันเอง ไม่งั้นเขาไปสร้างตารางจริงในฐานโดยไม่ตั้งใจ
-        const entry = script.find((s) => s.id === part.toolCallId)
-        if (entry) entry.ok = !part.output?.error
-      }
-      // tool พังหรือถูกปฏิเสธไม่ได้มาเป็น tool-result — ไม่ดักไว้ result จะค้างเป็น null แล้วหน้าจอโชว์ error ว่างๆ
-      if (part.type === 'tool-error')
-        step = { sql: step?.sql ?? '', result: { error: String(part.error) } }
-    }
-    return result
-  }
-
-  const result = await run(convo)
-
-  // ถ้ามี query จริงให้โชว์อันนั้น ไม่ใช่ DESCRIBE ที่บังเอิญเป็นคำสั่งสุดท้าย
-  const final = dataStep ?? step
-  const ran = script.filter((s) => s.ok).map((s) => s.sql)
-  // โมเดลสายคิดเยอะบางทีใช้โควตาไปกับ reasoning จนไม่เหลือข้อความ ปล่อยไปผู้ใช้เห็นกล่องเปล่า
-  // ไม่รู้ว่าพังหรือแค่ช้า — ขึ้น ⚠ ให้เหมือน error อื่นๆ (UI โชว์ปุ่มทำต่อให้ด้วย)
-  const text = (await result.text)?.trim()
-  return {
-    role: 'assistant',
-    content: text || '⚠ โมเดลไม่ได้ตอบข้อความกลับมา ลองถามใหม่ หรือเลือกโมเดลอื่นจากกล่องมุมขวาบน',
+  return collectToolRun(() => agent.stream({ messages: convo, abortSignal: signal }), {
     model: picked,
-    // ผ่าน JSON รอบหนึ่ง เพราะของนี้ต้องข้าม IPC แล้วลง jsonb — ให้พังตรงนี้ดีกว่าไปพังหลังเปิดแอปใหม่
-    modelMessages: JSON.parse(
-      JSON.stringify([...convo.slice(baseline), ...(await result.responseMessages)])
-    ),
-    step: final && ran.length ? { ...final, sql: ran.join(';\n\n') } : final
+    signal,
+    onStep,
+    onDelta
+  })
+}
+
+export async function reviseAgentAnswer(messages, answer, reason, { instructions, signal }) {
+  const correction = {
+    role: 'user',
+    content: `Review correction: ${reason} Rewrite the final answer in the user's language using only the successful tool evidence already present. Distinguish unique people from row counts. Do not invent data. If evidence is insufficient, say so. Do not execute tools.`
+  }
+  const revised = await askAgentAi([...messages, answer, correction], {
+    instructions,
+    model: answer.model,
+    signal,
+    allowTools: false
+  })
+  return {
+    ...answer,
+    content: revised.content,
+    ...(revised.status ? { status: revised.status } : {}),
+    modelMessages: [...(answer.modelMessages ?? []), correction, ...(revised.modelMessages ?? [])]
   }
 }

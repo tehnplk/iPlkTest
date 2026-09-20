@@ -238,7 +238,10 @@ function App() {
   // id ของห้องที่กดถังขยะไปแล้วหนึ่งครั้ง กำลังรอกดยืนยัน
   const [confirmId, setConfirmId] = useState(null)
   const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [runningTurn, setRunningTurn] = useState(null)
+  const turnRef = useRef(null)
+  const busy = Boolean(runningTurn)
+  const showingTurn = runningTurn?.conversationId === activeId
   const [runningSql, setRunningSql] = useState('')
   // คำตัดสินของ jev รอบนี้ (เลือกโมเดลตามความยาก) โชว์คั่นระหว่าง "กำลังคิด" กับ SQL
   const [jevNote, setJevNote] = useState('')
@@ -267,19 +270,21 @@ function App() {
     window.api.agent.models().then(setModels)
   }, [])
 
-  // main ส่ง sql ที่กำลังรัน และตัวอักษรที่โมเดลพิมพ์ มาแบบ realtime
-  useEffect(
-    () =>
-      window.api.agent.onStep(({ sql }) => {
-        setRunningSql(sql)
-        setStreamed('') // ขึ้น query ใหม่ = เริ่มตอบรอบใหม่
-      }),
-    []
-  )
-
-  useEffect(() => window.api.agent.onDelta((t) => setStreamed((prev) => prev + t)), [])
-
-  useEffect(() => window.api.agent.onJev(setJevNote), [])
+  useEffect(() => {
+    const accept = (handler) => (event) => {
+      if (
+        event.turnId === turnRef.current?.turnId &&
+        event.conversationId === turnRef.current?.conversationId
+      )
+        handler(event.value)
+    }
+    const off = [
+      window.api.agent.onStep(accept(({ sql }) => setRunningSql(sql))),
+      window.api.agent.onDelta(accept((text) => setStreamed((prev) => prev + text))),
+      window.api.agent.onJev(accept(setJevNote))
+    ]
+    return () => off.forEach((unsubscribe) => unsubscribe())
+  }, [])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
@@ -288,6 +293,7 @@ function App() {
   // กดถังขยะครั้งแรก = ถาม (ไอคอนเปลี่ยนเป็นเครื่องหมายถูกสีแดง) กดซ้ำถึงลบจริง
   // เอาเมาส์ออกจากแถวแล้วยกเลิกเอง ไม่ต้องมีปุ่มยกเลิก
   const removeConvo = async (id) => {
+    if (turnRef.current?.conversationId === id) return
     if (confirmId !== id) return setConfirmId(id)
     setConfirmId(null)
     await window.api.convos.remove(id)
@@ -329,9 +335,11 @@ function App() {
   }
 
   const submit = async (text) => {
-    if (!text || !active || busy) return
+    if (!text || !active || turnRef.current) return
     setDraft('')
-    setBusy(true)
+    const turn = { turnId: crypto.randomUUID(), conversationId: activeId }
+    turnRef.current = turn
+    setRunningTurn(turn)
     setRunningSql('')
     setStreamed('')
     setJevNote('')
@@ -343,18 +351,29 @@ function App() {
     let reply
     try {
       // reasoning_details ของข้อความเก่าถูกส่งกลับไปด้วย โมเดลจะคิดต่อจากเดิม
-      reply = await window.api.agent.send(sent, model)
+      reply = await window.api.agent.send({ ...turn, messages: sent, model })
     } catch (err) {
       reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
     }
 
     const messages = [...sent, reply]
     setConvos((prev) => prev.map((c) => (c.id === activeId ? { ...c, title, messages } : c)))
-    setBusy(false)
-    setRunningSql('')
-    setStreamed('')
-    setJevNote('')
-    await window.api.convos.save({ id: activeId, title, messages })
+    try {
+      await window.api.convos.save({ id: turn.conversationId, title, messages })
+    } catch (error) {
+      const warning = { role: 'assistant', content: `⚠ บันทึกประวัติไม่สำเร็จ: ${error.message}` }
+      setConvos((prev) =>
+        prev.map((c) =>
+          c.id === turn.conversationId ? { ...c, messages: [...messages, warning] } : c
+        )
+      )
+    } finally {
+      turnRef.current = null
+      setRunningTurn(null)
+      setRunningSql('')
+      setStreamed('')
+      setJevNote('')
+    }
   }
 
   return (
@@ -457,7 +476,7 @@ function App() {
               )}
             </div>
           ))}
-          {busy && (
+          {showingTurn && (
             <div className="msg assistant">
               {streamed ? (
                 <Markdown>{streamed}</Markdown>
@@ -482,7 +501,12 @@ function App() {
             autoFocus
           />
           {busy ? (
-            <button type="button" className="stop" onClick={() => window.api.agent.stop()}>
+            <button
+              type="button"
+              className="stop"
+              disabled={!showingTurn}
+              onClick={() => window.api.agent.stop(runningTurn.turnId)}
+            >
               หยุด
             </button>
           ) : (

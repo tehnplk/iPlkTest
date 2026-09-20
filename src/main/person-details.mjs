@@ -67,6 +67,12 @@ export async function enrichResult(result, sql, lookup, signal, decide = chooseH
 // Only replace the display result. modelMessages remains the original agent history.
 export async function appendPersonDetails(answer, lookup, signal, decide = chooseHook) {
   const result = answer?.step?.result
-  const enriched = await enrichResult(result, answer?.step?.sql, lookup, signal, decide)
+  const enriched = await enrichResult(
+    result,
+    answer?.step?.querySql ?? answer?.step?.sql,
+    lookup,
+    signal,
+    decide
+  )
   return enriched === result ? answer : { ...answer, step: { ...answer.step, result: enriched } }
 }
