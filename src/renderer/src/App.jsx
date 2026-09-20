@@ -250,6 +250,8 @@ function App() {
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
   // '' = อัตโนมัติ ให้ jev เลือกโมเดลตามความยากของคำถาม
   const [model, setModel] = useState(() => localStorage.getItem('model') ?? '')
+  // ความกว้าง sidebar ที่ลากไว้ จำไว้ในเครื่องเหมือนโมเดล
+  const [sidebarW, setSidebarW] = useState(() => +localStorage.getItem('sidebarW') || 260)
   const endRef = useRef(null)
   const started = useRef(false)
 
@@ -377,7 +379,7 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className="app" style={{ gridTemplateColumns: `${sidebarW}px 1fr` }}>
       <aside className="sidebar">
         <button className="new-chat" onClick={newConvo}>
           + {NEW_TITLE}
@@ -428,6 +430,18 @@ function App() {
               </div>
             ))}
         </div>
+        <div
+          className="resizer"
+          onPointerDown={(e) => {
+            e.preventDefault()
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }}
+          onPointerMove={(e) =>
+            e.currentTarget.hasPointerCapture(e.pointerId) &&
+            setSidebarW(Math.min(520, Math.max(180, e.clientX)))
+          }
+          onLostPointerCapture={() => localStorage.setItem('sidebarW', sidebarW)}
+        />
       </aside>
 
       <main className="chat">

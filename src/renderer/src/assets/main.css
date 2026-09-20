@@ -68,6 +68,7 @@ body {
 
 /* left: ประวัติการสนทนา */
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -75,6 +76,20 @@ body {
   background: var(--panel);
   border-right: 1px solid var(--border);
   overflow: hidden;
+}
+
+/* ลากขอบขวาของ sidebar เพื่อปรับความกว้าง */
+.resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.resizer:hover {
+  background: var(--accent);
 }
 
 .new-chat {
