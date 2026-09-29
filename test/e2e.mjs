@@ -40,14 +40,21 @@ const sql = (
     .catch(() => '')
 ).trim()
 const cells = await win.locator('.result td').count()
+const tools = await messages
+  .nth(count - 1)
+  .locator('.tool-list > li summary')
+  .allInnerTexts()
 
 console.log(ms(), 'SQL ที่ใช้:', sql || '(ไม่ได้ query)')
 console.log(ms(), 'ช่องในตาราง:', cells)
+console.log(ms(), 'tool ที่ใช้:\n' + tools.map((t, i) => `  ${i + 1}. ${t}`).join('\n'))
 console.log(ms(), 'คำตอบ:\n' + answer)
 
 assert.ok(count >= 2, 'ต้องมีทั้งข้อความผู้ใช้และคำตอบ')
 assert.ok(answer.length > 0, 'คำตอบต้องไม่ว่าง')
 assert.ok(!/^⚠/.test(answer), 'คำตอบไม่ควรเป็นข้อความ error')
+const names = tools.map((t) => t.split(' → ')[0])
+assert.equal(new Set(names).size, names.length, 'tool เดียวกันต้องโชว์แค่ครั้งล่าสุด')
 
 // ค้างหน้าต่างไว้ให้ดูผลก่อนปิด
 await new Promise((r) => setTimeout(r, 10000))

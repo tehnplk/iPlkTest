@@ -27,7 +27,7 @@ try {
     async ({ ipcMain }) => {
       const [{ createAgentTurns }, { collectToolRun }] = await globalThis.testModules
       const turns = createAgentTurns({
-        buildSystem: async () => 'offline prompt',
+        buildContext: async () => ({ instructions: 'offline prompt', messages: [] }),
         run: (_messages, options) =>
           collectToolRun(
             async () => ({
@@ -61,7 +61,11 @@ try {
             }),
             options
           ),
-        enrich: async (answer) => answer
+        enrich: async (answer) => answer,
+        // main เป็นคนบันทึกเทิร์น — เก็บไว้ให้เทสต์ตรวจแทน PGlite ของแอป
+        save: async (id, messages, title) => {
+          globalThis.savedTurns = [...(globalThis.savedTurns ?? []), { id, messages, title }]
+        }
       })
       ipcMain.removeHandler('agent:send')
       ipcMain.removeHandler('agent:stop')
@@ -104,8 +108,11 @@ try {
   assert.match(assistant, /หยุดแล้ว/)
   assert.match(assistant, /Partial fixture answer/)
   assert.equal(await win.locator('.result td').first().innerText(), '7')
-  const saved = await win.evaluate(() => window.api.convos.list())
-  const original = saved.find((convo) => convo.title === 'Original conversation')
+  const saved = await app.evaluate(() => globalThis.savedTurns)
+  assert.equal(saved.length, 1)
+  const original = saved[0]
+  assert.equal(original.title, 'Original conversation')
+  assert.deepEqual(original.messages[0], { role: 'user', content: 'Original conversation' })
   assert.equal(original.messages.at(-1).status, 'stopped')
   assert.equal(original.messages.at(-1).toolSteps.length, 1)
   assert.ok(!JSON.stringify(original.messages.at(-1).modelMessages).includes('pending'))

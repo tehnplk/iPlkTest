@@ -11,7 +11,6 @@ const api = {
   convos: {
     list: () => ipcRenderer.invoke('convos:list'),
     create: (title) => ipcRenderer.invoke('convos:create', title),
-    save: (convo) => ipcRenderer.invoke('convos:save', convo),
     remove: (id) => ipcRenderer.invoke('convos:delete', id),
     archive: (id, on) => ipcRenderer.invoke('convos:archive', id, on)
   },
@@ -21,7 +20,7 @@ const api = {
     models: () => ipcRenderer.invoke('agent:models'),
     stop: (turnId) => ipcRenderer.invoke('agent:stop', turnId),
     onStep: on('agent:step'),
-    onJev: on('agent:jev'),
+    onGuardrail: on('agent:guardrail'),
     onDelta: on('agent:delta')
   }
 }

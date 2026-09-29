@@ -139,6 +139,61 @@ function ChartBox({ spec }) {
   )
 }
 
+// ทุก tool ที่ใช้ในเทิร์นนี้ ตามลำดับ — tool เดียวกันเรียกหลายครั้งโชว์แค่ครั้งล่าสุด
+const lastUses = (steps) =>
+  steps.filter((s, i) => !steps.slice(i + 1).some((t) => t.toolName === s.toolName))
+
+// สรุปผลบรรทัดเดียว กางดูผลเต็มได้
+function outcome(r = {}) {
+  if (r.error) return `ผิดพลาด: ${String(r.error).slice(0, 80)}`
+  if (r.chart) return `กราฟ ${r.points} จุด`
+  if (r.file) return `ไฟล์ Excel ${r.rowCount.toLocaleString()} แถว`
+  if (r.stdout !== undefined)
+    return r.exitCode
+      ? `Python error (exit ${r.exitCode})`
+      : `วิเคราะห์ ${r.rowCount.toLocaleString()} แถว`
+  if (r.saved) return `จำไว้: ${r.saved}`
+  if (r.forgot) return `ลืม: ${r.forgot.join(', ')}`
+  if (r.results) return `ผลค้นเว็บ ${r.results.length} รายการ`
+  if (r.status !== undefined) return `HTTP ${r.status}`
+  if (r.columns)
+    return r.columns.length
+      ? `${r.rowCount.toLocaleString()} แถว × ${r.columns.length} คอลัมน์`
+      : `แก้ไข ${r.rowCount} แถว`
+  return 'สำเร็จ'
+}
+
+// เนื้อหาเรนเดอร์ตอนกางเท่านั้น — ไม่งั้นตารางซ่อนของทุก tool ค้างใน DOM ทุกข้อความ
+function ToolItem({ step }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <li>
+      <details onToggle={(e) => setOpen(e.currentTarget.open)}>
+        <summary>
+          <b>{step.toolName}</b> → {outcome(step.result)}
+        </summary>
+        {open && (
+          <>
+            <pre className="sql">{step.sql}</pre>
+            {step.input?.code && <pre className="sql">{step.input.code}</pre>}
+            <Safe>
+              <Result step={step} />
+            </Safe>
+          </>
+        )}
+      </details>
+    </li>
+  )
+}
+
+const ToolList = ({ steps }) => (
+  <ol className="tool-list">
+    {lastUses(steps).map((s) => (
+      <ToolItem key={s.toolCallId} step={s} />
+    ))}
+  </ol>
+)
+
 // step.result มาจาก main เป็น {columns, rows, rowCount, truncated} หรือ {error}
 function Result({ step }) {
   const r = step.result ?? {}
@@ -155,13 +210,22 @@ function Result({ step }) {
   if (r.saved) return <div className="more">🧠 จำไว้แล้ว: {r.saved}</div>
   if (r.forgot) return <div className="more">🧠 ลืมแล้ว: {r.forgot.join(', ')}</div>
 
-  // ผลจาก rest_api ไม่ใช่ตาราง
+  // ผลจาก tool_stat_analysis — ข้อความที่ Python print ออกมา
+  if (r.stdout !== undefined)
+    return <pre className="result-raw">{[r.stdout, r.stderr].filter(Boolean).join('\n')}</pre>
+
+  // ผลจาก tool_rest_api ไม่ใช่ตาราง
   if (r.status !== undefined)
     return (
       <pre className="result-raw">
         {`HTTP ${r.status}
 `}
-        {(typeof r.body === 'string' ? r.body : JSON.stringify(r.body, null, 2)).slice(0, 4000)}
+        {/* tool_web_search อ่านหน้าเว็บคืน content แทน body */}
+        {String(
+          typeof (r.body ?? r.content) === 'string'
+            ? (r.body ?? r.content)
+            : JSON.stringify(r.body, null, 2)
+        ).slice(0, 4000)}
       </pre>
     )
   // tool อื่นที่ไม่ได้คืนตาราง — อย่าให้หน้าจอพังเพราะรูปแบบไม่ตรง
@@ -242,13 +306,13 @@ function App() {
   const turnRef = useRef(null)
   const busy = Boolean(runningTurn)
   const showingTurn = runningTurn?.conversationId === activeId
-  const [runningSql, setRunningSql] = useState('')
-  // คำตัดสินของ jev รอบนี้ (เลือกโมเดลตามความยาก) โชว์คั่นระหว่าง "กำลังคิด" กับ SQL
-  const [jevNote, setJevNote] = useState('')
+  const [runningSteps, setRunningSteps] = useState([])
+  // สถานะ guardrail รอบนี้ (ตรวจคำตอบ) โชว์คั่นระหว่าง "กำลังคิด" กับ SQL
+  const [guardrailNote, setGuardrailNote] = useState('')
   const [streamed, setStreamed] = useState('')
   const [models, setModels] = useState([])
   // จำโมเดลที่เลือกไว้ในเครื่อง ไม่ต้องเลือกใหม่ทุกครั้งที่เปิดแอป
-  // '' = อัตโนมัติ ให้ jev เลือกโมเดลตามความยากของคำถาม
+  // ค่าที่ไม่อยู่ในรายการ (เช่น '' จาก AUTO เดิม) แสดงและใช้ตัวแรก
   const [model, setModel] = useState(() => localStorage.getItem('model') ?? '')
   // ความกว้าง sidebar ที่ลากไว้ จำไว้ในเครื่องเหมือนโมเดล
   const [sidebarW, setSidebarW] = useState(() => +localStorage.getItem('sidebarW') || 260)
@@ -281,16 +345,28 @@ function App() {
         handler(event.value)
     }
     const off = [
-      window.api.agent.onStep(accept(({ sql }) => setRunningSql(sql))),
+      // ผลของ call ที่มีบนจอ → อัปเดตบรรทัดเดิม / call ใหม่ → ต่อท้าย (tool เดิมย้ายลงมาเป็นครั้งล่าสุด)
+      // ผลของ call ที่ถูก call ใหม่ของ tool เดียวกันแทนที่ไปแล้ว ไม่ต้องโชว์
+      window.api.agent.onStep(
+        accept((step) =>
+          setRunningSteps((prev) =>
+            prev.some((s) => s.id === step.id)
+              ? prev.map((s) => (s.id === step.id ? step : s))
+              : step.result
+                ? prev
+                : [...prev.filter((s) => s.tool !== step.tool), step]
+          )
+        )
+      ),
       window.api.agent.onDelta(accept((text) => setStreamed((prev) => prev + text))),
-      window.api.agent.onJev(accept(setJevNote))
+      window.api.agent.onGuardrail(accept(setGuardrailNote))
     ]
     return () => off.forEach((unsubscribe) => unsubscribe())
   }, [])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' })
-  }, [active?.messages.length, activeId, runningSql, streamed])
+  }, [active?.messages.length, activeId, runningSteps, streamed])
 
   // กดถังขยะครั้งแรก = ถาม (ไอคอนเปลี่ยนเป็นเครื่องหมายถูกสีแดง) กดซ้ำถึงลบจริง
   // เอาเมาส์ออกจากแถวแล้วยกเลิกเอง ไม่ต้องมีปุ่มยกเลิก
@@ -342,39 +418,38 @@ function App() {
     const turn = { turnId: crypto.randomUUID(), conversationId: activeId }
     turnRef.current = turn
     setRunningTurn(turn)
-    setRunningSql('')
+    setRunningSteps([])
     setStreamed('')
-    setJevNote('')
+    setGuardrailNote('')
 
     const sent = [...active.messages, { role: 'user', content: text }]
     const title = active.messages.length ? active.title : text.slice(0, 40)
     setConvos((prev) => prev.map((c) => (c.id === activeId ? { ...c, title, messages: sent } : c)))
 
-    let reply
     try {
-      // reasoning_details ของข้อความเก่าถูกส่งกลับไปด้วย โมเดลจะคิดต่อจากเดิม
-      reply = await window.api.agent.send({ ...turn, messages: sent, model })
-    } catch (err) {
-      reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
-    }
-
-    const messages = [...sent, reply]
-    setConvos((prev) => prev.map((c) => (c.id === activeId ? { ...c, title, messages } : c)))
-    try {
-      await window.api.convos.save({ id: turn.conversationId, title, messages })
-    } catch (error) {
-      const warning = { role: 'assistant', content: `⚠ บันทึกประวัติไม่สำเร็จ: ${error.message}` }
+      // ส่งแค่ข้อความล่าสุด — main ดึงแชทล่าสุด สรุป และความจำที่เกี่ยวจากฐานเอง แล้วบันทึกเทิร์นเอง
+      let reply
+      try {
+        reply = await window.api.agent.send({ ...turn, text, model })
+      } catch (err) {
+        // เทิร์นไม่ได้เริ่ม (เช่นมีงานค้าง) — main ไม่ได้บันทึกอะไร
+        reply = { role: 'assistant', content: `เรียก agent ไม่สำเร็จ: ${err.message}` }
+      }
+      const { saveError, ...saved } = reply
+      const warning = saveError && {
+        role: 'assistant',
+        content: `⚠ บันทึกประวัติไม่สำเร็จ: ${saveError}`
+      }
+      const messages = [...sent, saved, ...(warning ? [warning] : [])]
       setConvos((prev) =>
-        prev.map((c) =>
-          c.id === turn.conversationId ? { ...c, messages: [...messages, warning] } : c
-        )
+        prev.map((c) => (c.id === turn.conversationId ? { ...c, title, messages } : c))
       )
     } finally {
       turnRef.current = null
       setRunningTurn(null)
-      setRunningSql('')
+      setRunningSteps([])
       setStreamed('')
-      setJevNote('')
+      setGuardrailNote('')
     }
   }
 
@@ -448,13 +523,12 @@ function App() {
         <header className="chat-header">
           <span className="title">{active?.title ?? ''}</span>
           <select
-            value={model}
+            value={models.includes(model) ? model : (models[0] ?? '')}
             onChange={(e) => {
               setModel(e.target.value)
               localStorage.setItem('model', e.target.value)
             }}
           >
-            <option value="">อัตโนมัติ</option>
             {models.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -466,6 +540,7 @@ function App() {
           {active?.messages.length === 0 && <div className="empty">ถาม SQL ของ HOSxP ได้เลย</div>}
           {active?.messages.map((m, i) => (
             <div key={i} className={'msg ' + m.role}>
+              {m.toolSteps?.length > 0 && <ToolList steps={m.toolSteps} />}
               {m.step && (
                 <>
                   {/* ย่อไว้เป็นค่าเริ่มต้น กดกางดูคำสั่งเต็มได้ (ใช้ <details> ของเบราว์เซอร์ ไม่ต้องมี state) */}
@@ -491,16 +566,29 @@ function App() {
             </div>
           ))}
           {showingTurn && (
-            <div className="msg assistant">
-              {streamed ? (
-                <Markdown>{streamed}</Markdown>
-              ) : (
-                <>
-                  <span className="dots">กำลังคิด...</span>
-                  {jevNote && <div className="jev-note">{jevNote}</div>}
-                  {runningSql && <pre className="sql running">{runningSql}</pre>}
-                </>
+            <div className="msg assistant running">
+              <span className="spinner" role="status" aria-label="กำลังทำงาน" />
+              {!streamed && <span className="dots">กำลังคิด...</span>}
+              {!streamed && guardrailNote && <div className="guardrail-note">{guardrailNote}</div>}
+              {/* ค้างไว้แม้โมเดลเริ่มพิมพ์คำตอบแล้ว จะได้เห็นว่าผ่าน tool อะไรมาบ้าง */}
+              {runningSteps.length > 0 && (
+                <ol className="tool-list">
+                  {runningSteps.map((s) => (
+                    <li key={s.id} className={s.result ? '' : 'running'}>
+                      <b>{s.tool}</b> {s.sql.replace(/\s+/g, ' ').slice(0, 60)}
+                      {s.result ? (
+                        <span className={s.result.error ? 'tool-fail' : 'tool-ok'}>
+                          {' '}
+                          {s.result.error ? '✗' : '✓'} {outcome(s.result)}
+                        </span>
+                      ) : (
+                        ' … กำลังทำ'
+                      )}
+                    </li>
+                  ))}
+                </ol>
               )}
+              {streamed && <Markdown>{streamed}</Markdown>}
             </div>
           )}
           <div ref={endRef} />

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { openSql } from '../src/main/tools/sql.mjs'
 import { collectToolRun } from '../src/main/tool-run.mjs'
 import { createAgentTurns } from '../src/main/agent-turn.mjs'
-import { toModelMessages } from '../src/main/history.mjs'
+import { toModelMessages } from '../src/main/conversation-memory.mjs'
 
 // Test through the actual query interface, including the decision-to-execution seam.
 let executed = 0
@@ -26,65 +26,17 @@ const driver = {
   })
 }
 const sql = `SELECT ${Array.from({ length: 20 }, (_, i) => `safe_${i}`).join(', ')}, passport_no FROM patient`
-const inspected = []
-const db = openSql(
-  {},
-  {
-    driver,
-    ask: async (state, questions) => {
-      const columns = Object.entries(state)
-        .filter(([key]) => key.startsWith('col_'))
-        .map(([, value]) => value)
-      inspected.push(...columns)
-      return Object.fromEntries(
-        Object.keys(questions).map((key, i) => [
-          key,
-          { noul: columns[i] === 'passport_no' ? 0.9 : 0.01 }
-        ])
-      )
-    }
-  }
-)
+const db = openSql({}, { driver })
 assert.match((await db.query(sql)).error, /passport_no/)
-assert.equal(inspected.length, 21)
 assert.equal(acquired, 0)
 assert.equal(executed, 0)
-await db.close()
-
-for (const score of [undefined, null, NaN, Infinity, -1, 2, '0.01']) {
-  const blocked = openSql({}, { driver, ask: async () => ({ c0: { noul: score } }) })
-  assert.match((await blocked.query('SELECT sex FROM patient')).error, /ตรวจข้อมูลส่วนบุคคลไม่ได้/)
-  await blocked.close()
-}
-assert.equal(acquired, 0)
-const allowed = openSql(
-  {},
-  {
-    driver,
-    ask: async (_state, questions) =>
-      Object.fromEntries(Object.keys(questions).map((key) => [key, { noul: 0.01 }]))
-  }
-)
-assert.equal((await allowed.query(sql.replace('passport_no', 'sex'))).rows[0][0], '1')
+assert.equal((await db.query(sql.replace('passport_no', 'sex'))).rows[0][0], '1')
 assert.equal(executed, 1)
-await allowed.close()
-
-const duringPrivacy = new AbortController()
-const cancelled = openSql(
-  {},
-  {
-    driver,
-    ask: async () => {
-      duringPrivacy.abort()
-      return { c0: { noul: 0 } }
-    }
-  }
-)
-await assert.rejects(cancelled.query('SELECT sex FROM patient', duringPrivacy.signal), {
+await assert.rejects(db.query('SELECT sex FROM patient', AbortSignal.abort()), {
   name: 'AbortError'
 })
 assert.equal(executed, 1)
-await cancelled.close()
+await db.close()
 
 const call = (id, sql, toolName = 'sql') => ({
   type: 'tool-call',
@@ -186,11 +138,12 @@ const deferred = () => {
   })
   return { promise, resolve }
 }
-const request = (turnId) => ({ turnId, conversationId: 'original', messages: [] })
+const request = (turnId) => ({ turnId, conversationId: 'original', text: 'hi' })
+const context = (instructions) => ({ instructions, messages: [] })
 const prompt = deferred()
 let runs = 0
 const turns = createAgentTurns({
-  buildSystem: () => prompt.promise,
+  buildContext: () => prompt.promise,
   run: async () => {
     runs++
     return answer
@@ -201,30 +154,53 @@ const first = turns.send(request('one'))
 await assert.rejects(turns.send(request('two')), /กำลังทำอยู่/)
 turns.stop('wrong-id')
 turns.stop('one')
-prompt.resolve('prompt')
+prompt.resolve(context('prompt'))
 assert.equal((await first).status, 'stopped')
 assert.equal(runs, 0)
 assert.equal((await turns.send(request('two'))).content, 'done')
 
 let failPrompt = true
 const retry = createAgentTurns({
-  buildSystem: async () => {
+  buildContext: async () => {
     if (failPrompt) throw new Error('prompt failed')
-    return 'prompt'
+    return context('prompt')
   },
   run: async () => answer,
   enrich: async (value) => value
 })
-await assert.rejects(retry.send(request('one')), /prompt failed/)
+// error หลังเริ่มเทิร์นกลายเป็นคำตอบ status error (ถูกบันทึก) และไม่ค้างเทิร์นถัดไป
+const failed = await retry.send(request('one'))
+assert.equal(failed.status, 'error')
+assert.match(failed.content, /prompt failed/)
 failPrompt = false
 assert.equal((await retry.send(request('two'))).content, 'done')
+
+// main บันทึกเทิร์นเอง; person lookup ล้มไม่ทำให้คำตอบหาย; บันทึกล้มยังได้คำตอบ + saveError
+const saves = []
+let failSave = false
+const owner = createAgentTurns({
+  buildContext: async () => context('prompt'),
+  run: async () => answer,
+  enrich: async () => {
+    throw new Error('mysql gone')
+  },
+  save: async (...args) => {
+    if (failSave) throw new Error('disk full')
+    saves.push(args)
+  }
+})
+const kept = await owner.send(request('save'))
+assert.equal(kept.content, 'done')
+assert.deepEqual(saves, [['original', [{ role: 'user', content: 'hi' }, kept], 'hi']])
+failSave = true
+assert.equal((await owner.send(request('save2'))).saveError, 'disk full')
 
 const enriching = deferred()
 const releaseEnrichment = deferred()
 const events = []
 let lateDelta
 const lifecycle = createAgentTurns({
-  buildSystem: async () => 'prompt',
+  buildContext: async () => context('prompt'),
   run: async (_messages, { onDelta }) => {
     lateDelta = onDelta
     onDelta('live')

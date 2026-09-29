@@ -1,5 +1,4 @@
 import { join } from 'path'
-import { db } from './sql.mjs'
 import { enrichResult, PERSON_COLUMNS } from '../person-details.mjs'
 import ExcelJS from 'exceljs'
 
@@ -28,9 +27,9 @@ export async function writeXlsx(dir, name, columns, rows) {
 }
 
 export const excelTool = {
-  name: 'export_excel',
+  name: 'tool_export_excel',
   description: `รัน SELECT แล้วเซฟผลเป็นไฟล์ Excel (.xlsx) ในโฟลเดอร์ Downloads แล้วขึ้นปุ่มเปิดไฟล์ให้ผู้ใช้เอง
-ใช้เมื่อผู้ใช้ขอไฟล์ หรือผลยาวเกิน 200 แถวที่ tool sql ส่งกลับได้ (ที่นี่ได้ถึง ${MAX_EXPORT_ROWS.toLocaleString()} แถว)
+ใช้เมื่อผู้ใช้ขอไฟล์ หรือผลยาวเกิน 200 แถวที่ tool_sql ส่งกลับได้ (ที่นี่ได้ถึง ${MAX_EXPORT_ROWS.toLocaleString()} แถว)
 ถ้าผลมี patient.hos_guid หรือ person.person_id ระบบจะเติม cid, hn, pname, fname, lname ลงในไฟล์ให้เอง (จะแจ้งใน added_columns)
 คืน {file, columns, rows 20 แถวแรกไว้ดูหน้าตา, rowCount} — ตอบผู้ใช้แค่ว่าเซฟให้แล้วกี่แถว ไม่ต้องบอก path`,
   parameters: {
@@ -47,7 +46,7 @@ export const excelTool = {
     },
     required: ['sql', 'filename']
   },
-  run: async (args, signal, { downloadsDir }) => {
+  run: async (args, signal, { db, downloadsDir }) => {
     const res = await db.query(args.sql ?? '', signal, MAX_EXPORT_ROWS)
     if (res.error || !res.columns.length) return res
     // เติมชื่อลงไฟล์ด้วย ไม่งั้นไฟล์ไม่ตรงกับตารางบนจอที่ผู้ใช้เห็น

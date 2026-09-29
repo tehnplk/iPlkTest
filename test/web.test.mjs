@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { webTool } from '../src/main/tools/web.mjs'
+import { webTool, trustedSource } from '../src/main/tools/web.mjs'
 
 const real = globalThis.fetch
 const stub = (body, { ok = true, status = 200, type = 'text/html' } = {}) => {
@@ -71,52 +71,21 @@ globalThis.fetch = async () => {
 }
 assert.match((await webTool.run({ query: 'x' })).error, /ECONNRESET/)
 
-// --- jev คัดแหล่งที่ไม่น่าเชื่อถือ: ยิงคำถามครบทุกแหล่งในคำขอเดียว แล้วทิ้งตัวที่ต่ำกว่าเพดาน
-const jev = (scores) => async (url, opt) => {
-  if (!String(url).includes('decisions'))
-    return { ok: true, status: 200, headers: { get: () => 'text/html' }, text: async () => PAGE }
-  sentToJev = JSON.parse(opt.body)
-  const answers = {}
-  scores.forEach((n, i) => (answers[`r${i}`] = { type: 'noul', noul: n }))
-  return {
-    ok: true,
-    status: 200,
-    headers: { get: () => 'application/json' },
-    json: async () => ({ answers })
-  }
-}
-let sentToJev = null
-
-process.env.OPENROUTER_API_KEY = 'test-key'
-globalThis.fetch = jev([0.9, 0.03])
-const filtered = await webTool.run({ query: 'x' }, undefined, { ask: 'คำถามผู้ใช้' })
-assert.equal(filtered.results.length, 1, 'แหล่งที่ได้ 0.03 ต้องถูกคัดทิ้ง')
+for (const url of [
+  'https://moph.go.th.evil.com',
+  'https://evil.com/moph.go.th',
+  'https://moph.go.th@evil.com',
+  'javascript:alert(1)'
+])
+  assert.equal(trustedSource(url), false, url)
+assert.equal(trustedSource('https://www.dtam.moph.go.th/a'), true)
+stub(PAGE.replace('http%3A%2F%2Fthcc.or.th', 'http%3A%2F%2Fevil.com'))
+const filtered = await webTool.run({ query: 'x' })
+assert.equal(filtered.results.length, 1)
 assert.equal(filtered.dropped, 1)
-assert.match(filtered.results[0].url, /dtam/)
-assert.equal(sentToJev.state.topic, 'คำถามผู้ใช้')
-// url ต้องถึง jev ด้วย ไม่ใช่แค่ title/snippet — โดเมนคือหลักฐานหลักว่าแหล่งน่าเชื่อถือไหม
-assert.ok(sentToJev.state.source_0.startsWith('https://www.dtam.moph.go.th'))
-assert.equal(
-  Object.keys(sentToJev.questions).length,
-  2,
-  'ต้องถามทุกแหล่งในคำขอเดียว ไม่ยิงทีละครั้ง'
-)
-assert.equal(sentToJev.questions.r0.type, 'noul')
-
-// ไม่มีแหล่งไหนผ่านเลย — ส่งของเดิมไปแต่ต้องติดป้ายเตือน ไม่ใช่คืนมือเปล่าจนโมเดลคิดว่าไม่มีข้อมูล
-globalThis.fetch = jev([0.01, 0.02])
-const none = await webTool.run({ query: 'x' }, undefined, { ask: 'q' })
-assert.equal(none.results.length, 2)
-assert.match(none.warning, /ระมัดระวัง/)
-
-// jev ตอบไม่ครบ/ล่ม/ไม่มี ask = ไม่คัด ส่งผลดิบทั้งหมด
-globalThis.fetch = jev([0.9])
-assert.equal((await webTool.run({ query: 'x' }, undefined, { ask: 'q' })).results.length, 2)
-stub(PAGE)
-assert.equal((await webTool.run({ query: 'x' })).results.length, 2)
-delete process.env.OPENROUTER_API_KEY
-globalThis.fetch = jev([0.9, 0.03])
-assert.equal((await webTool.run({ query: 'x' }, undefined, { ask: 'q' })).results.length, 2)
-
+stub(PAGE.replace('www.dtam.moph.go.th', 'evil.com').replace('thcc.or.th', 'evil.com'))
+const none = await webTool.run({ query: 'x' })
+assert.equal(none.results.length, 0)
+assert.ok(none.warning)
 restore()
 console.log('web ok')

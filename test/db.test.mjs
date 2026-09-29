@@ -17,6 +17,27 @@ const saved = rows.find((r) => r.id === id)
 assert.equal(saved.title, 'หัวข้อ')
 assert.deepEqual(saved.messages, [{ role: 'user', content: 'สวัสดี' }])
 
+// สรุปแชทอยู่คู่กับห้อง ห้องใหม่ยังไม่มีสรุป
+assert.equal((await db.get(id)).summarized, 0)
+await db.setSummary(id, 'คุยเรื่องทักทาย', 1)
+assert.deepEqual(
+  { summary: (await db.get(id)).summary, summarized: (await db.get(id)).summarized },
+  { summary: 'คุยเรื่องทักทาย', summarized: 1 }
+)
+assert.equal(await db.get(-1), null)
+
+// ต่อท้ายเทิร์น: ห้องว่างได้ชื่อจากข้อความแรก ห้องที่มีข้อความแล้วชื่อไม่เปลี่ยน
+const fresh0 = await db.create('ใหม่')
+const turn = [
+  { role: 'user', content: 'ถาม' },
+  { role: 'assistant', content: 'ตอบ' }
+]
+await db.append(fresh0, turn, 'ถาม')
+await db.append(fresh0, turn, 'ไม่ใช้')
+assert.equal((await db.get(fresh0)).title, 'ถาม')
+assert.deepEqual((await db.get(fresh0)).messages, [...turn, ...turn])
+await db.remove(fresh0)
+
 // ลบบทสนทนา
 await db.remove(second)
 assert.equal((await db.list()).length, 1)

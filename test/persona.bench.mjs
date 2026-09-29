@@ -1,12 +1,4 @@
-// วัดว่า jev ตัดสิน "คอลัมน์นี้เป็นข้อมูลส่วนบุคคลไหม" ได้แม่นแค่ไหน — npm run bench:persona
-// ยิง jev จริง (ต้องมี OPENROUTER_API_KEY) เลยไม่อยู่ใน npm test
-// แก้ LEAK_CRITERIA ใน src/main/tools/sql.mjs เมื่อไหร่ ให้รันอันนี้ก่อน commit
-import fs from 'node:fs'
-
-for (const line of fs.readFileSync('.env', 'utf8').split('\n')) {
-  const m = line.match(/^([A-Z_]+)=(.*)$/)
-  if (m) process.env[m[1]] ??= m[2].trim()
-}
+// Offline regex privacy regression corpus.
 const { leakingColumns } = await import('../src/main/tools/sql.mjs')
 
 // ชุดที่ 1: ทุกคอลัมน์ที่ลิสต์ตายตัวเคยกันไว้ ถามพร้อมกันในคำสั่งเดียว

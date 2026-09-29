@@ -53,7 +53,7 @@ const callApi = openApi({
 })
 
 export const apiTool = {
-  name: 'rest_api',
+  name: 'tool_rest_api',
   description: `เรียก REST API ภายนอกด้วย http/https ได้ทุก host ตามที่ผู้ใช้สั่ง ใช้ตอนต้องดึงหรือส่งข้อมูลกับระบบอื่น เช่น API ของ สปสช./สสจ.
 คืน {status, body} — body เป็น JSON ถ้าแปลงได้ ไม่งั้นเป็นข้อความดิบ ตัดที่ ${MAX_BYTES / 1000} KB
 เรียกไม่สำเร็จจะคืน {error} ไม่ throw ให้อ่าน error แล้วแก้ url/method เองก่อนลองใหม่ (timeout ${TIMEOUT_MS / 1000} วินาที)`,

@@ -1,5 +1,3 @@
-import { db } from './sql.mjs'
-
 // กราฟที่มีจุดเยอะกว่านี้อ่านไม่รู้เรื่อง ให้ไป GROUP BY มาใหม่
 const MAX_POINTS = 50
 // เกินนี้สีเริ่มวน ก้อนที่เหลือยุบเป็น "อื่นๆ"
@@ -81,7 +79,7 @@ export function toChart({ columns, rows }, type = 'bar', title = '') {
 }
 
 export const chartTool = {
-  name: 'render_chart',
+  name: 'tool_render_chart',
   description: `วาดกราฟจากผล SELECT แล้วแสดงในหน้าจอแชทให้ผู้ใช้เห็นทันที (Chart.js)
 ใช้เมื่อผู้ใช้ขอกราฟ/แผนภูมิ หรือเมื่อตัวเลขที่เทียบกันหลายก้อนดูเป็นกราฟแล้วเข้าใจง่ายกว่าตาราง
 คอลัมน์แรกของ query คือป้ายกำกับ (เดือน/เพศ/แผนก) คอลัมน์ถัดไปคือค่าตัวเลข ใส่ได้หลายคอลัมน์ = หลายชุดข้อมูล (ยกเว้น pie/doughnut ใช้คอลัมน์เดียว)
@@ -106,7 +104,7 @@ pyramid = ปิรามิดประชากร ต้อง SELECT 3 ค�
     },
     required: ['sql', 'title']
   },
-  run: async (args, signal) => {
+  run: async (args, signal, { db }) => {
     const res = await db.query(args.sql ?? '', signal, MAX_POINTS + 1)
     if (res.error) return res
     return toChart(res, args.type ?? 'bar', args.title ?? '')

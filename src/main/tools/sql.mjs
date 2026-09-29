@@ -1,4 +1,3 @@
-import { askJev } from '../jev.mjs'
 import mysql from 'mysql2/promise'
 
 const MAX_ROWS = 200
@@ -102,29 +101,7 @@ const PERSON_LOOKUP = {
 }
 const GROUP_BY = { person_id: ' GROUP BY p.person_id' }
 
-// ข้อมูลส่วนบุคคล: jev ตัดสินคนเดียว ไม่มีลิสต์ชื่อคอลัมน์ตายตัว เพราะไล่ไม่มีวันครบ —
-// ที่อยู่อย่างเดียวมีชื่อคอลัมน์ 28 แบบ (addrpart, addr_soi, pat_addr, work_addr, old_addr ...)
-// phone 12, email 7 ให้ jev อ่าน "ทีละคอลัมน์" แล้วบอกกลับว่าคอลัมน์ไหนรั่ว agent จะได้ตัดถูกตัว
-//
-// วัดกับ 31 คอลัมน์ที่ลิสต์ตายตัวเคยกันไว้ (cid, hn, lname, เบอร์โทร ทั้งแบบมี prefix ตาราง
-// เปลี่ยนชื่อด้วย AS ห่อ MAX/GROUP_CONCAT/SUBSTRING/CONCAT) ถูก 31/31 และไม่บล็อกเกินสักตัว
-// (COUNT(DISTINCT hn), fname, pname, birthday, hos_guid, person_id ผ่านหมด) — npm run bench:persona
-//
-// ถามรายคอลัมน์ ไม่ถามรวมทั้งคำสั่ง เพราะถามรวมแล้วเป็นการตัดสินเชิงนโยบาย วัดแล้วสลับขั้ว
-// (pname+fname ได้ 0.65 สูงกว่าเคสที่อยู่ 0.56)
-//
-// วัดจริงรายคอลัมน์: road/passport_no 0.96, tel/email 0.95, addr_soi 0.94, บ้านเลขที่ 0.90,
-// CONCAT ชื่อ-สกุล 0.90, address 0.84, patient_name 0.74, person_name 0.57
-// ที่ต้องผ่าน: pname 0.35, v.moo 0.08, hos_guid/fname/person_id/birthday/sex/age <0.08
-// ช่องว่าง 0.35 -> 0.57 ตั้งเพดานตรงกลาง (~400ms/คำสั่ง, ~$0.00002)
-const JEV_BLOCK = 0.46
 const METADATA = /^\s*(show|desc|describe|explain)\b/i
-const MAX_ASK = 20
-const LEAK_CRITERIA = {
-  true: 'Judge the source expression, ignoring any AS alias that renames or disguises it. It is true when the output carries a way to reach one specific person at home or to officially identify them. In this Thai hospital schema that means: cid (the 13-digit Thai citizen ID, always identifying, whatever table it sits in), hn (the hospital number), the family name or any column holding a whole person name however it happens to be spelled, passport number, phone, mobile, fax, email, and the street part of a home address (house number, lane, soi, road, street, or a full address line). GROUP_CONCAT, MIN, MAX, SUBSTRING, CONCAT and similar still hand back the stored values themselves, so they are true whenever they read such a column',
-  false:
-    'The output carries none of that. COUNT() is the only aggregate that returns a pure number rather than stored values, so COUNT of anything is false. Also false: dates, ages, sex, diagnosis or drug codes, hospital department, an area grouping used for statistics such as village number, subdistrict or province, and opaque keys such as hos_guid, person_id, vn or an. A title prefix (pname) and a given name (fname) are each false on their own, and stay false even when the same statement selects both, because without the family name they do not single out one person'
-}
 
 // แยก projection เป็นรายคอลัมน์ที่ระดับบนสุด (คอมมาในวงเล็บของ CONCAT/COUNT ไม่นับ)
 function splitColumns(projection) {
@@ -146,64 +123,52 @@ function splitColumns(projection) {
   return out.map((c) => c.trim()).filter(Boolean)
 }
 
-// คืนชื่อคอลัมน์ที่รั่ว, [] = ไม่มีอะไรรั่ว, null = ตัดสินไม่ได้ (jev ล่ม/ไม่มีคีย์/ช้า)
-// null กับ [] ต้องแยกกันให้ชัด เพราะ jev เป็นด่านเดียวที่เหลือแล้ว ตัดสินไม่ได้ต้องไม่แปลว่าปลอดภัย
-//
-// ต้องส่ง SQL ไปด้วยเสมอ ไม่งั้น jev เห็นชื่อคอลัมน์ลอยๆ แล้วเดาผิด (คอลัมน์ชื่อ name
-// ในตาราง icd101 คือชื่อโรค แต่ถ้าไม่มี context มันจะตีเป็นชื่อ-สกุลคน)
-export async function leakingColumns(columns, sql, signal, ask = askJev) {
-  const list = columns.filter(Boolean)
-  if (!list.length) return []
-  const leaking = []
-  for (let start = 0; start < list.length; start += MAX_ASK) {
-    signal?.throwIfAborted()
-    const batch = list.slice(start, start + MAX_ASK)
-    const state = { sql: String(sql ?? '').replace(/\s+/g, ' ') }
-    const questions = {}
-    batch.forEach((column, i) => {
-      state[`col_${i}`] = column
-      questions[`c${i}`] = {
-        type: 'noul',
-        instructions: `col_${i}: this column of the SELECT result of the statement in sql`,
-        criteria: LEAK_CRITERIA
+// Match source identifiers before SQL executes. Only complete COUNT expressions are exempt.
+const PRIVATE =
+  /^(?:cid|hn|lname|surname|last_?name|full_?name|patient_?name|person_?name|.*(?:phone|mobile|email|passport|address|addr).*|.*tel(?:_.*)?|fax|road|street|soi|house_?(?:no|number))$/i
+export async function leakingColumns(columns, sql, signal) {
+  signal?.throwIfAborted()
+  return columns.filter((column) => {
+    const parsed = scanSql(column)
+    if (parsed.error) return true
+    const source = parsed.text
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\bas\s+[\s\S]*$/i, '')
+      .trim()
+    const count = /^count\s*\(/i.exec(source)
+    if (count) {
+      let depth = 1,
+        i = count[0].length
+      for (; i < source.length && depth; i++) {
+        if (source[i] === '(') depth++
+        if (source[i] === ')') depth--
       }
-    })
-    const answers = await ask(state, questions, signal)
-    signal?.throwIfAborted()
-    for (const [i, column] of batch.entries()) {
-      const score = answers?.[`c${i}`]?.noul
-      if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 1)
-        return null
-      if (score >= JEV_BLOCK) leaking.push(column)
+      if (!depth && /^\s*(?:[\w$]+)?\s*$/.test(source.slice(i))) return false
     }
-  }
-  return leaking
+    return (source.match(/[\p{L}_$][\p{L}\p{N}_$]*/gu) ?? []).some(
+      (name) =>
+        PRIVATE.test(name) ||
+        /^(?:เลขบัตรประชาชน|บ้านเลขที่|นามสกุล|เบอร์โทร|ชื่อสกุล)$/.test(name) ||
+        (name.toLowerCase() === 'name' && /\b(?:patient|person|doctor)\b/i.test(sql))
+    )
+  })
 }
 
-// jev เป็นด่านเดียวที่กันข้อมูลส่วนบุคคล ถามไม่ได้ก็ต้องไม่รัน ไม่ใช่ปล่อยผ่านเงียบๆ
-// (ตอนยังมี regex เป็นพื้น ปล่อยผ่านได้ พอถอด regex ออกแล้วปล่อยผ่าน = ไม่เหลือด่านอะไรเลย)
-const UNAVAILABLE =
-  'ตรวจข้อมูลส่วนบุคคลไม่ได้ตอนนี้ (ตัวตรวจไม่ตอบ) เลยยังไม่รัน SQL ให้ ลองใหม่อีกครั้ง ถ้ายังไม่ได้ให้บอกผู้ใช้ว่าระบบตรวจขัดข้อง'
-
 const verdict = (leaking) => {
-  if (leaking === null) {
-    console.log('[jev] ตัดสินไม่ได้ ไม่รัน SQL')
-    return UNAVAILABLE
-  }
   if (!leaking.length) return null
-  console.log(`[jev] คอลัมน์ที่รั่ว: ${leaking.join(', ')}`)
+  console.log(`[guardrail] คอลัมน์ที่รั่ว: ${leaking.join(', ')}`)
   return `คอลัมน์ ${leaking.join(', ')} เป็นข้อมูลส่วนบุคคล (ช่องทางติดต่อ ที่อยู่ หรือเลขประจำตัว) เอาออกจาก SELECT แล้วรันใหม่ ถ้าต้องระบุตัวคนให้ใช้ patient.hos_guid หรือ person.person_id แทน แอปจะเติมชื่อให้เองหลังตอบ`
 }
 
 // ก่อนรัน: ดูจาก projection ที่โมเดลเขียนมา ได้ชื่อตรงกับที่มันพิมพ์ บอกให้ตัดได้ตรงตัว
 // คำตัดสินไม่ได้ส่งขึ้นจอ — prompt กันคอลัมน์พวกนี้ไว้ก่อนแล้ว ด่านนี้แทบไม่ทำงาน
 // ที่ผู้ใช้ควรเห็นคือข้อความที่ agent ตอบกลับมาว่าดึงคอลัมน์นั้นไม่ได้ ซึ่งเห็นอยู่แล้ว
-export async function checkLeak(sql, signal, ask = askJev) {
+export async function checkLeak(sql, signal) {
   const parsed = scanSql(sql)
   if (parsed.error) return parsed.error
   if (METADATA.test(sql)) return null // SHOW/DESCRIBE คืนโครงสร้าง ไม่ใช่ข้อมูลคน ไม่ต้องจ่ายค่าถาม
   const cols = projections(sql).flatMap(splitColumns)
-  return verdict(await leakingColumns(cols, sql, signal, ask))
+  return verdict(await leakingColumns(cols, sql, signal))
 }
 
 // SELECT * ห้ามทุกกรณี — ตอนก่อนรันมองไม่เห็นว่าจะได้คอลัมน์อะไร ตรวจไม่ได้
@@ -247,7 +212,7 @@ const LIMITS = [
 
 // คำสั่งที่แตะ tmp_ ต้องวิ่งบน connection เดิมเสมอ (temp table ผูกกับ session)
 // ที่เหลือหยิบจาก pool ได้ จึงรันพร้อมกันหลาย query ในรอบเดียวได้
-export function openSql(config, { driver = mysql, ask = askJev } = {}) {
+export function openSql(config, { driver = mysql } = {}) {
   let conn = null
   let pool = null
 
@@ -303,7 +268,7 @@ export function openSql(config, { driver = mysql, ask = askJev } = {}) {
 
     async query(sql, signal, limit = MAX_ROWS) {
       signal?.throwIfAborted()
-      const bad = checkSql(sql) || (await checkLeak(sql, signal, ask))
+      const bad = checkSql(sql) || (await checkLeak(sql, signal))
       signal?.throwIfAborted()
       if (bad) return { error: bad }
 
@@ -323,8 +288,16 @@ export function openSql(config, { driver = mysql, ask = askJev } = {}) {
         if (!fields) return { columns: [], rows: [], rowCount: result.affectedRows ?? 0 }
 
         const columns = fields.map((f) => f.name)
+        // Origin comes from MySQL, not aliases or model-supplied SQL text.
+        const personIndex = fields.findIndex(
+          (field) =>
+            (field.orgTable === 'patient' && field.orgName === 'hos_guid') ||
+            (field.orgTable === 'person' && field.orgName === 'person_id')
+        )
         return {
           columns,
+          personKey:
+            personIndex < 0 ? null : { index: personIndex, by: fields[personIndex].orgName },
           rows: result.slice(0, limit).map((r) => r.map((v) => (v === null ? null : String(v)))),
           rowCount: result.length,
           truncated: result.length > limit
@@ -348,20 +321,8 @@ export function openSql(config, { driver = mysql, ask = askJev } = {}) {
   }
 }
 
-// ค่ามาจาก .env ที่ env.mjs โหลดเข้า process.env ตอนเปิดแอป
-const env = (key, fallback = '') => process.env[key] ?? fallback
-
-// ต่อฐานข้อมูลใน main เอง โมเดลไม่เห็นรหัสผ่าน (ยังไม่ต่อจริงจนกว่าจะ query ครั้งแรก)
-export const db = openSql({
-  host: env('DB_HOST', 'localhost'),
-  port: Number(env('DB_PORT', 3306)),
-  user: env('DB_USER'),
-  password: env('DB_PASSWORD'),
-  database: env('DB_NAME')
-})
-
 export const sqlTool = {
-  name: 'sql',
+  name: 'tool_sql',
   description: `รัน SQL กับฐานข้อมูล HOSxP จริง (MySQL/MariaDB) ทีละคำสั่ง
 อ่านอย่างเดียว: SELECT/SHOW/DESCRIBE/EXPLAIN/WITH — เขียนได้เฉพาะตารางชั่วคราวชื่อขึ้นต้น tmp_ ซึ่งอยู่ข้าม call ได้
 ห้าม SELECT * ทุกกรณี ให้ DESCRIBE ดูชื่อคอลัมน์ก่อนแล้วไล่เลือกเอาเฉพาะที่ใช้
@@ -381,5 +342,5 @@ query ที่ไม่ขึ้นต่อกันให้เรียก t
     },
     required: ['sql']
   },
-  run: (args, signal) => db.query(args.sql ?? '', signal)
+  run: (args, signal, { db }) => db.query(args.sql ?? '', signal)
 }

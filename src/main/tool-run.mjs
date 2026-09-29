@@ -1,9 +1,12 @@
 import { fit } from './fit.mjs'
+import { selectDisplay } from './display-result.mjs'
 
-const metadata = /^\s*(show|desc|describe|explain)\b/i
-const temporary = (sql) => /\btmp_/i.test(sql ?? '')
+// ค่าที่เป็น object (เช่น headers ของ api) ต้องเป็น JSON ไม่งั้นขึ้น [object Object]
 const label = (call) =>
-  call.input?.sql ?? `${call.toolName}: ${Object.values(call.input ?? {}).join(' ')}`
+  call.input?.sql ??
+  `${call.toolName}: ${Object.values(call.input ?? {})
+    .map((v) => (v && typeof v === 'object' ? JSON.stringify(v) : v))
+    .join(' ')}`
 
 export const stoppedAnswer = (answer = {}) => ({
   ...answer,
@@ -39,7 +42,7 @@ export async function collectToolRun(stream, { model, signal, onStep, onDelta } 
       if (part.type === 'tool-call') {
         calls.set(part.toolCallId, { call: part })
         events.push({ type: 'call', id: part.toolCallId })
-        onStep?.({ sql: label(part) })
+        onStep?.({ id: part.toolCallId, tool: part.toolName, sql: label(part) })
       }
       if ((part.type === 'tool-result' && !part.preliminary) || part.type === 'tool-error') {
         const entry = calls.get(part.toolCallId)
@@ -48,6 +51,13 @@ export async function collectToolRun(stream, { model, signal, onStep, onDelta } 
         entry.failed = part.type === 'tool-error'
         entry.output = entry.failed ? { error: String(part.error) } : part.output
         completed.push(entry)
+        // ผลของ call เดิม — จอเปลี่ยนสถานะบรรทัดนั้นจาก "กำลังทำ" เป็นผลลัพธ์
+        onStep?.({
+          id: part.toolCallId,
+          tool: entry.call.toolName,
+          sql: label(entry.call),
+          result: entry.output
+        })
       }
     }
     stopped ||= Boolean(signal?.aborted)
@@ -60,45 +70,10 @@ export async function collectToolRun(stream, { model, signal, onStep, onDelta } 
     toolCallId: call.toolCallId,
     toolName: call.toolName,
     sql: label(call),
+    input: call.input,
     result: output
   }))
-  // Retain each temporary query's own successful prerequisites for later display selection.
-  const orderedCalls = [...calls.values()]
-  for (const step of steps) {
-    if (!temporary(step.sql)) continue
-    const position = orderedCalls.findIndex((entry) => entry.call.toolCallId === step.toolCallId)
-    step.sqlScript = orderedCalls
-      .slice(0, position + 1)
-      .filter(
-        (entry) =>
-          entry.done && !entry.failed && !entry.output?.error && temporary(entry.call.input?.sql)
-      )
-      .map((entry) => entry.call.input.sql)
-      .join(';\n\n')
-  }
-  const display = steps
-    .filter(
-      (step) =>
-        !step.result?.error &&
-        !metadata.test(step.sql) &&
-        (step.result?.chart ||
-          step.result?.file ||
-          (Array.isArray(step.result?.columns) &&
-            step.result.columns.length > 0 &&
-            Array.isArray(step.result?.rows)))
-    )
-    .at(-1)
-  const selected = display ?? steps.at(-1) ?? null
-  const script = [...calls.values()]
-    .filter(
-      (entry) =>
-        entry.done && !entry.failed && !entry.output?.error && temporary(entry.call.input?.sql)
-    )
-    .map((entry) => entry.call.input.sql)
-  const step =
-    selected && script.length && temporary(selected.sql)
-      ? { ...selected, querySql: selected.sql, sql: script.join(';\n\n') }
-      : selected
+  const { step } = selectDisplay(steps)
 
   // On stop, reconstruct only completed pairs. Never replay an orphan call.
   const replay = () =>

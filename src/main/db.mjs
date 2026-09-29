@@ -15,6 +15,9 @@ export async function openDb(dataDir) {
     );
     -- ห้องที่ผู้ใช้กดเก็บเข้าคลัง ไม่หมดอายุ (ADD COLUMN IF NOT EXISTS = ฐานเก่าก็อัปเองได้)
     ALTER TABLE conversations ADD COLUMN IF NOT EXISTS archived boolean NOT NULL DEFAULT false;
+    -- สรุปข้อความเก่าของห้อง: summary ครอบคลุม messages[0 .. summarized)
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS summary text NOT NULL DEFAULT '';
+    ALTER TABLE conversations ADD COLUMN IF NOT EXISTS summarized int NOT NULL DEFAULT 0;
     CREATE TABLE IF NOT EXISTS memory (
       text text PRIMARY KEY,
       created_at timestamptz NOT NULL DEFAULT now()
@@ -22,6 +25,8 @@ export async function openDb(dataDir) {
   `)
 
   return {
+    close: () => pg.close(),
+
     // id ตัดสินเมื่อ updated_at เท่ากัน — now() คือเวลาเริ่ม transaction คำสั่งติดๆ กันได้ค่าเดียวกัน
     list: async () =>
       (
@@ -33,6 +38,34 @@ export async function openDb(dataDir) {
     // เก็บเข้าคลัง / เอาออกจากคลัง — อยู่ในคลังแล้วไม่หมดอายุ
     archive: async (id, on = true) => {
       await pg.query('UPDATE conversations SET archived = $1 WHERE id = $2', [!!on, id])
+    },
+
+    get: async (id) =>
+      (
+        await pg.query(
+          'SELECT id, title, messages, summary, summarized FROM conversations WHERE id = $1',
+          [id]
+        )
+      ).rows[0] ?? null,
+
+    // ต่อท้ายข้อความของเทิร์น — ห้องที่ยังว่างได้ชื่อจากข้อความแรก
+    append: async (id, messages, title) => {
+      await pg.query(
+        `UPDATE conversations
+         SET messages = messages || $2::jsonb,
+             title = CASE WHEN messages = '[]'::jsonb THEN $3 ELSE title END,
+             updated_at = now()
+         WHERE id = $1`,
+        [id, JSON.stringify(messages), title]
+      )
+    },
+
+    setSummary: async (id, summary, summarized) => {
+      await pg.query('UPDATE conversations SET summary = $1, summarized = $2 WHERE id = $3', [
+        summary,
+        summarized,
+        id
+      ])
     },
 
     create: async (title) =>
@@ -67,10 +100,10 @@ export async function openDb(dataDir) {
       await pg.query('DELETE FROM conversations WHERE id = $1', [id])
     },
 
-    // ความจำกลาง ใช้ร่วมกันทุกบทสนทนา แนบเข้า system prompt ทุกครั้ง
-    // ponytail: เก็บ 100 บรรทัดล่าสุดพอ ถ้าต้องมากกว่านี้ค่อยทำค้นหาแทนการแนบทั้งก้อน
+    // ความจำกลาง ใช้ร่วมกันทุกบทสนทนา — conversation-memory.mjs คัดเฉพาะบรรทัดที่เกี่ยวกับคำถามเข้า prompt
+    // ponytail: ให้คะแนนใน JS ทีละ 500 บรรทัดล่าสุด ถ้าต้องมากกว่านี้ค่อยย้ายไปค้นใน SQL
     memories: async () =>
-      (await pg.query('SELECT text FROM memory ORDER BY created_at DESC LIMIT 100')).rows
+      (await pg.query('SELECT text FROM memory ORDER BY created_at DESC LIMIT 500')).rows
         .map((r) => r.text)
         .reverse(),
 

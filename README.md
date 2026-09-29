@@ -35,7 +35,6 @@ npm run dev
 | `LLM_MODELS`                                          | ชื่อโมเดลที่ key นี้เรียกได้ คั่นด้วย `,` ตัวแรกเป็นค่าเริ่มต้น                                  |
 | `DB_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_NAME` | ฐานข้อมูล HOSxP                                                                                 |
 | `API_TOKEN`                                           | token ที่แอปแนบให้ตอนเรียก API (ถ้ามี)                                                          |
-| `OPENROUTER_API_KEY`                                  | คีย์ OpenRouter ให้ Jev คัดแหล่งที่ไม่น่าเชื่อถือออกจากผลค้นเว็บ (ไม่ใส่ = ไม่คัด)              |
 
 > `.env` ถูกอ่านตอนเปิดแอป (ไม่ได้ฝังลงบันเดิลตอน build) แก้ค่าแล้วเปิดแอปใหม่พอ ไม่ต้อง build ใหม่
 > ตอนแพ็กเป็นแอปแล้วให้วางไฟล์ `.env` ไว้ข้าง `.exe`
@@ -62,7 +61,7 @@ src/main/
     sql.mjs       รัน SQL + กันคำสั่งเขียนข้อมูล
     excel.mjs     export .xlsx
     api.mjs       เรียก REST API
-    web.mjs       ค้นหาความรู้จากอินเทอร์เน็ต + อ่านหน้าเว็บ (Jev คัดแหล่งที่ไม่เป็นทางการทิ้ง)
+    web.mjs       ค้นหาความรู้จากอินเทอร์เน็ต + อ่านหน้าเว็บ (regex กรอง hostname ของแหล่งข้อมูล)
 src/renderer/     หน้าจอแชท (React)
 ```
 
@@ -73,3 +72,7 @@ src/renderer/     หน้าจอแชท (React)
 
 agent รัน SQL ได้เองโดยไม่ต้องกดยืนยัน มีแค่ตัวกรองด้วย regex กันคำสั่งเขียนข้อมูล
 ของจริงควรต่อด้วย DB user ที่มีสิทธิ์ `SELECT` + `CREATE TEMPORARY TABLES` เท่านั้น
+
+Guardrails run locally without Jev: SQL projection privacy, trusted web hostnames, database-origin person-key selection, and numeric COUNT checks. Final status `guardrail-passed` confirms only these checks, not semantic correctness. Unknown person-key provenance skips enrichment. Source hostnames outside the allowlist are omitted.
+
+Person name enrichment runs automatically from MySQL column origins (`patient.hos_guid` / `person.person_id`), including aliases, JOINs and quoted filters. The lookup adds names only to the displayed result and Excel file, never model history. Run `npm run test:person-live` for real-LLM Electron verification with synthetic database data.

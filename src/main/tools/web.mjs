@@ -1,5 +1,3 @@
-import { askJev } from '../jev.mjs'
-
 // ค้นหาความรู้จากอินเทอร์เน็ต — ใช้ตอนโมเดลต้องรู้เรื่องที่ไม่ได้อยู่ในฐานข้อมูล
 // (มาตรฐานรหัส ICD/ICD-10-TM, นิยามตัวชี้วัด, ประกาศ สปสช./สธ., สูตรคำนวณทางคลินิก)
 //
@@ -16,42 +14,21 @@ const MAX_PAGE_CHARS = 8000
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
 
-// Jev (TypeSafe System One) — คัดแหล่งที่ไม่น่าเชื่อถือทิ้งก่อนส่งผลค้นเข้าโมเดล
-// ความตรงประเด็นเป็นหน้าที่ของเครื่องมือค้นหาอยู่แล้ว สิ่งที่มันทำไม่ได้คือแยก "ของจริง"
-// ออกจาก "หน้าปั่นคอนเทนต์" — คำถามสุขภาพยิ่งหนัก ผลอันดับต้นๆ เป็นบล็อกขายของแทบทั้งนั้น
-//
-// วัดจริงกับคำค้น "เกณฑ์วินิจฉัยเบาหวาน FBS": betahopeful.com 0.04, themedicative.co 0.07,
-// hellokhunmor.com 0.10, chulalakpharmacy.com 0.16, siamhealth.net 0.20 — ส่วน dmthai.org
-// (สมาคมโรคเบาหวานฯ) 0.58 และคำค้น ICD-10-TM ได้ dtam.moph.go.th 0.92, thcc.or.th 0.72
-// ช่องว่างกว้าง 0.20 -> 0.53 เลยตั้งเพดานไว้ตรงกลาง
-//
-// ไม่เอาไปเรียงลำดับใหม่ — วัดแล้วมันแยก "ดี vs ดีกว่า" ไม่ออก ปล่อยลำดับเดิมของ DDG ไว้
-const TRUSTED = 0.35
-
-// คืน array ของความน่าจะเป็นเรียงตาม results หรือ null = ตัดสินไม่ได้ (ไม่มีคีย์/ล่ม/ช้า)
-// ถามทุกแหล่งในคำขอเดียว — state ก้อนเดียวใช้ร่วมกัน เลยจ่ายค่า token รอบเดียว (~$0.00007)
-async function rateSources(topic, results, signal) {
-  // ใส่ topic ไปด้วยเพราะ "น่าเชื่อถือ" ขึ้นกับเรื่องที่ถาม — เว็บกระทรวงสาธารณสุขเชื่อได้
-  // เรื่องเกณฑ์วินิจฉัย แต่ไม่ใช่เรื่องอื่น
-  const state = { topic: topic || '' }
-  const questions = {}
-  results.forEach((r, i) => {
-    state[`source_${i}`] = `${r.url} | ${r.title}`
-    questions[`r${i}`] = {
-      type: 'noul',
-      instructions: `Source ${i} is an authoritative primary source for this topic`,
-      criteria: {
-        true: 'Government agency, ministry, professional association, university, hospital, standards body, or peer-reviewed publication',
-        false: 'Commercial blog, content farm, SEO page, forum, product marketing, or news rewrite'
-      }
-    }
-  })
-
-  // jev ล่ม/ช้า/ไม่มีคีย์ = ได้ null ห้ามทำให้การค้นหาพังไปด้วย
-  const answers = await askJev(state, questions, signal)
-  if (!answers) return null
-  const scores = results.map((_, i) => answers[`r${i}`]?.noul)
-  return scores.every((n) => typeof n === 'number') ? scores : null
+// Match parsed hostnames, never trusted-domain text in a path or spoofed suffix.
+export function trustedSource(url) {
+  try {
+    const target = new URL(url)
+    return (
+      /^https?:$/.test(target.protocol) &&
+      !target.username &&
+      !target.password &&
+      /(?:^|\.)(?:[a-z0-9-]+\.go\.th|[a-z0-9-]+\.ac\.th|[a-z0-9-]+\.gov|[a-z0-9-]+\.edu|who\.int|cdc\.gov|nih\.gov|dmthai\.org|thcc\.or\.th)$/i.test(
+        target.hostname
+      )
+    )
+  } catch {
+    return false
+  }
 }
 
 // เอา tag ออกให้เหลือข้อความที่คนอ่านได้ — script/style ต้องทิ้งทั้งก้อน ไม่ใช่แค่ถอด tag
@@ -78,7 +55,7 @@ const unwrap = (href) => {
   }
 }
 
-async function search(query, signal, userRequest) {
+async function search(query, signal) {
   const res = await fetch(SEARCH_URL + encodeURIComponent(query), {
     headers: { 'user-agent': UA },
     signal: signal ?? AbortSignal.timeout(TIMEOUT_MS)
@@ -98,22 +75,13 @@ async function search(query, signal, userRequest) {
   if (!results.length)
     return { error: 'ไม่พบผลการค้นหา (หรือเครื่องมือค้นหาเปลี่ยนรูปแบบหน้าเว็บ)', results: [] }
 
-  const scores = await rateSources(userRequest, results, signal)
-  // jev ตัดสินไม่ได้ = ส่งผลดิบไปทั้งหมดเหมือนไม่มีฟีเจอร์นี้
-  if (!scores) return { results }
-
-  const keep = results.filter((_, i) => scores[i] >= TRUSTED)
-  // ไม่มีแหล่งไหนผ่านเลย — ส่งของเดิมไปแต่บอกให้รู้ตัว ดีกว่าคืนมือเปล่าจนโมเดลคิดว่าไม่มีข้อมูล
-  if (!keep.length)
-    return {
-      results,
-      warning: 'ไม่มีแหล่งไหนดูเป็นทางการเลย ใช้ข้อมูลจากผลค้นชุดนี้อย่างระมัดระวัง'
-    }
-
-  const dropped = results.length - keep.length
-  if (dropped)
-    console.log(`[jev] คัดแหล่งไม่น่าเชื่อถือทิ้ง ${dropped}/${results.length} | ${query}`)
-  return { results: keep, ...(dropped ? { dropped } : {}) }
+  signal?.throwIfAborted()
+  const keep = results.filter((result) => trustedSource(result.url))
+  return {
+    results: keep,
+    dropped: results.length - keep.length,
+    ...(!keep.length ? { warning: 'ไม่มีแหล่งที่ผ่าน regex guardrail ให้ปรับคำค้น' } : {})
+  }
 }
 
 async function read(url, signal) {
@@ -144,7 +112,7 @@ async function read(url, signal) {
 }
 
 export const webTool = {
-  name: 'web_search',
+  name: 'tool_web_search',
   description: `ค้นหาความรู้จากอินเทอร์เน็ต ใช้เมื่อต้องรู้เรื่องที่ไม่ได้อยู่ในฐานข้อมูลโรงพยาบาล
 เช่น มาตรฐานรหัส ICD-10 / ICD-10-TM, นิยามตัวชี้วัด, เกณฑ์ สปสช., สูตรคำนวณทางคลินิก
 ใส่ query = ค้นหา คืน {results:[{title,url,snippet}]} — ระบบคัดแหล่งที่ไม่เป็นทางการทิ้งให้แล้ว
@@ -157,12 +125,11 @@ export const webTool = {
       url: { type: 'string', description: 'ใส่เมื่อจะอ่านหน้าเว็บที่ได้จากผลค้นหา' }
     }
   },
-  // ask = คำถามล่าสุดของผู้ใช้ แอปส่งมาให้ ไม่ใช่ของที่โมเดลกรอก — jev ใช้ตัวนี้คัดผลค้น
-  run: async ({ query, url }, signal, { ask } = {}) => {
+  run: async ({ query, url }, signal) => {
     if (url) return read(url, signal)
     if (!query?.trim()) return { error: 'ต้องใส่ query หรือ url อย่างใดอย่างหนึ่ง' }
     try {
-      return await search(query, signal, ask)
+      return await search(query, signal)
     } catch (e) {
       return { error: `ค้นหาไม่สำเร็จ: ${e.message}` }
     }

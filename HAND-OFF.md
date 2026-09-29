@@ -1,3 +1,7 @@
+# Current update — 2026-09-21
+
+Jev has been removed from every runtime path. Local regex guardrails handle routing, SQL privacy, web hostnames and numeric answer checks. Person enrichment now triggers automatically from MySQL column-origin metadata, including JOINs and aliases, without a model decision. The historical handoff below describes the previous implementation and its results; it is not current behavior.
+
 # iPlkTest — ส่งต่องาน Agent / Tool Calling / Privacy
 
 อัปเดต 20 กันยายน 2569 · Workspace `E:\Electron\iPlkTest`

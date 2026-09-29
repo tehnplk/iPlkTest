@@ -1,38 +1,29 @@
-import { askJev } from './jev.mjs'
-
 // คีย์ระบุตัวคนที่ยอมให้ agent ดึงออกมาได้ อันไหนโผล่ในผลลัพธ์ก็เติมชื่อตามอันนั้น
 const KEYS = ['hos_guid', 'person_id']
 export const PERSON_COLUMNS = ['cid', 'hn', 'pname', 'fname', 'lname']
 const key = (value) =>
   value === null || value === undefined ? '' : String(value).trim().toLowerCase()
 
-// ชื่อคอลัมน์อย่างเดียวบอกไม่ได้ว่าคีย์นั้นคือคน — vn_stat.hos_guid เป็น guid ของวิสิต
-// (30,961 ค่า จากผู้ป่วย 6,615 คน join กับ patient.hos_guid ได้ 0 แถว) icd101 ก็มี hos_guid
-// ให้ jev อ่าน SQL กับชื่อคอลัมน์ผลลัพธ์แล้วตัดสินว่าจะเติมจากทะเบียนไหน หรือไม่เติมเลย
-// วัดจริง 6/6: patient 1.00/0.76, person 1.00, vn_stat→none 0.80, icd101→none 0.93, สรุปรวม→none 1.00
-export async function chooseHook(sql, columns, signal, ask = askJev) {
-  const answers = await ask(
-    { sql: String(sql ?? '').replace(/\s+/g, ' '), result_columns: columns.join(', ') },
-    {
-      hook: {
-        type: 'choice',
-        instructions:
-          'Each result row identifies which kind of record? Choose what the key column in result_columns refers to',
-        criteria: {
-          patient:
-            'A row of the hospital patient registry — the key column is patient.hos_guid, one value per patient',
-          person:
-            'A row of the population registry — the key column is person.person_id, one value per resident',
-          none: 'Neither — the rows are aggregates, reference data, or the key column is a guid of a visit or of a row in some other table rather than of a person'
-        }
-      }
-    },
-    signal
-  )
-  // jev ฟันธงมาในฟิลด์ choice เอง ไม่ต้องหา argmax จาก probabilities
-  const pick = answers?.hook?.choice
-  if (!pick) return undefined // jev ตัดสินไม่ได้ ให้ผู้เรียกถอยไปดูชื่อคอลัมน์แทน
-  return pick === 'patient' ? 'hos_guid' : pick === 'person' ? 'person_id' : null
+// Enrich only an unambiguous direct registry key projection.
+export async function chooseHook(sql, columns, signal) {
+  signal?.throwIfAborted()
+  const clean = String(sql ?? '').replace(/`/g, '')
+  if (/['";]|--|#|\/\*|\b(?:with|union|group|count)\b/i.test(clean)) return null
+  const match =
+    /^\s*select\s+(?:distinct\s+)?([^()]+?)\s+from\s+(patient|person)(?:\s+(?:as\s+)?(?!where\b|limit\b|order\b)([a-z_]\w*))?(?:\s+(?:where|limit|order)\b[\s\S]*)?\s*$/i.exec(
+      clean
+    )
+  if (!match) return null
+  const field = match[2].toLowerCase() === 'patient' ? 'hos_guid' : 'person_id'
+  const qualifier = (match[3] ?? match[2]).toLowerCase()
+  const direct = match[1].split(',').some((part) => {
+    const projection = part.trim().toLowerCase()
+    const alias = /\s+as\s+(\w+)$/.exec(projection)
+    if (alias && alias[1] !== field) return false
+    const expr = projection.replace(/\s+as\s+\w+$/, '')
+    return expr === field || expr === `${qualifier}.${field}`
+  })
+  return direct && columns.some((c) => c.toLowerCase() === field) ? field : null
 }
 
 // เติม cid, hn, ชื่อ-สกุล ต่อท้ายตาราง {columns, rows} — คืนตัวเดิมถ้าไม่มีคีย์ระบุคน
@@ -40,25 +31,34 @@ export async function chooseHook(sql, columns, signal, ask = askJev) {
 export async function enrichResult(result, sql, lookup, signal, decide = chooseHook) {
   if (result?.error || !Array.isArray(result?.columns) || !Array.isArray(result?.rows))
     return result
-  const index = result.columns.findIndex((column) => KEYS.includes(column.toLowerCase()))
-  if (index < 0) return result
+  signal?.throwIfAborted()
+  // Current query results carry authoritative MySQL origin metadata. A null key
+  // means no registry key was selected; never override that with SQL guessing.
+  // SQL fallback is only for older saved results without origin metadata.
+  const hasOrigin = Object.hasOwn(result, 'personKey')
+  const by = hasOrigin ? result.personKey?.by : await decide(sql, result.columns, signal)
+  if (!by) return result
   signal?.throwIfAborted()
 
-  const named = result.columns[index].toLowerCase()
-  const by = await decide(sql, result.columns, signal)
-  if (by === null) return result // jev บอกว่าคีย์นี้ไม่ใช่คน เติมไปก็ได้ค่าว่างเปล่า
-  signal?.throwIfAborted()
-
-  const ids = [...new Set(result.rows.map((row) => row[index]).filter((id) => key(id)))]
-  // jev ล่ม (undefined) ถอยไปเชื่อชื่อคอลัมน์เหมือนเดิม ดีกว่าไม่เติมอะไรเลย
-  const people = ids.length ? await lookup(by ?? named, ids, signal) : []
+  const keyIndex = hasOrigin
+    ? result.personKey.index
+    : result.columns.findIndex((column) => column.toLowerCase() === by)
+  if (
+    !KEYS.includes(by) ||
+    !Number.isInteger(keyIndex) ||
+    keyIndex < 0 ||
+    keyIndex >= result.columns.length
+  )
+    return result
+  const ids = [...new Set(result.rows.map((row) => row[keyIndex]).filter((id) => key(id)))]
+  const people = ids.length ? await lookup(by, ids, signal) : []
   signal?.throwIfAborted()
   const byId = new Map(people.map((person) => [key(person.id), person]))
   return {
     ...result,
     columns: [...result.columns, ...PERSON_COLUMNS],
     rows: result.rows.map((row) => {
-      const person = byId.get(key(row[index]))
+      const person = byId.get(key(row[keyIndex]))
       return [...row, ...PERSON_COLUMNS.map((column) => person?.[column] ?? null)]
     })
   }

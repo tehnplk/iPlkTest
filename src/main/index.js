@@ -1,13 +1,19 @@
-// ต้องมาก่อนทุก import ที่อ่าน process.env ตอนโหลด (agent-ai, tools/sql, tools/api)
+// ต้องมาก่อนทุก import ที่อ่าน process.env ตอนโหลด (agent-ai, tools/api)
 import './env.mjs'
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { store } from './store.mjs'
-import { askAgentAi, closeAgent, MODELS, buildSystem, reviseAgentAnswer } from './agent-ai.mjs'
+import {
+  askAgentAi,
+  closeAgent,
+  MODELS,
+  conversationMemory,
+  hospitalDb,
+  reviseAgentAnswer
+} from './agent-ai.mjs'
 import { finalizeAnswer } from './answer-review.mjs'
-import { db as hospitalDb } from './tools/sql.mjs'
 import { appendPersonDetails } from './person-details.mjs'
 import { createAgentTurns } from './agent-turn.mjs'
 
@@ -51,12 +57,11 @@ app.whenReady().then(async () => {
   await db.purge()
   ipcMain.handle('convos:list', () => db.list())
   ipcMain.handle('convos:create', (_e, title) => db.create(title))
-  ipcMain.handle('convos:save', (_e, convo) => db.save(convo))
   ipcMain.handle('convos:delete', (_e, id) => db.remove(id))
   ipcMain.handle('convos:archive', (_e, id, on) => db.archive(id, on))
 
   const turns = createAgentTurns({
-    buildSystem,
+    buildContext: conversationMemory.contextFor,
     run: askAgentAi,
     finalize: (answer, messages, options) =>
       finalizeAnswer(answer, messages, {
@@ -65,7 +70,13 @@ app.whenReady().then(async () => {
           reviseAgentAnswer(messages, draft, reason, { ...options, signal })
       }),
     enrich: (answer, signal) => appendPersonDetails(answer, hospitalDb.personDetails, signal),
-    downloadsDir: app.getPath('downloads')
+    // บันทึกเสร็จแล้วค่อยย่อข้อความเก่าเข้า summary เบื้องหลัง — ล้มเหลวก็แค่หน้าต่าง recent ยาวขึ้น
+    save: async (id, messages, title) => {
+      await db.append(id, messages, title)
+      conversationMemory
+        .afterTurn(id)
+        .catch((error) => console.error('update summary failed:', error))
+    }
   })
   ipcMain.handle('agent:stop', (_e, turnId) => turns.stop(turnId))
   ipcMain.handle('file:open', (_e, path) => shell.openPath(path))

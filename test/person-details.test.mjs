@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
-import { appendPersonDetails, enrichResult } from '../src/main/person-details.mjs'
+import { appendPersonDetails, enrichResult, chooseHook } from '../src/main/person-details.mjs'
 
-// jev ปลอม: ให้ hook ตามชื่อคอลัมน์ ยกเว้นเทสต์ที่ส่ง decide ของตัวเองเข้าไป
+// guardrail ปลอม: ให้ hook ตามชื่อคอลัมน์ ยกเว้นเทสต์ที่ส่ง decide ของตัวเองเข้าไป
 const pick = (by) => async () => by
-import { toModelMessages } from '../src/main/history.mjs'
+import { toModelMessages } from '../src/main/conversation-memory.mjs'
 
 const result = {
   columns: ['hos_guid', 'visits'],
@@ -81,12 +81,12 @@ for (const response of [
     response
   )
 }
-// jev บอกว่าคีย์นี้ไม่ใช่คน (เช่น vn_stat.hos_guid) ต้องไม่เติมและไม่ยิงฐาน
+// guardrail บอกว่าคีย์นี้ไม่ใช่คน (เช่น vn_stat.hos_guid) ต้องไม่เติมและไม่ยิงฐาน
 assert.equal(
   await appendPersonDetails(answer, () => assert.fail('ไม่ควรค้นหา'), null, pick(null)),
   answer
 )
-// jev ล่ม = undefined ถอยไปเชื่อชื่อคอลัมน์
+// guardrail ล่ม = undefined ถอยไปเชื่อชื่อคอลัมน์
 const fallback = await appendPersonDetails(
   answer,
   async (by) => {
@@ -96,7 +96,7 @@ const fallback = await appendPersonDetails(
   null,
   async () => undefined
 )
-assert.equal(fallback.step.result.columns.length, 7)
+assert.equal(fallback, answer)
 
 await assert.rejects(
   appendPersonDetails(
@@ -134,3 +134,17 @@ assert.equal(
 )
 
 console.log('person details ok')
+
+assert.equal(await chooseHook('SELECT p.hos_guid FROM patient p', ['hos_guid']), 'hos_guid')
+assert.equal(await chooseHook('SELECT person_id FROM person', ['person_id']), 'person_id')
+for (const sql of [
+  'SELECT hos_guid FROM vn_stat',
+  'SELECT v.hos_guid FROM patient p JOIN vn_stat v ON v.hn = p.hn',
+  'SELECT person_id AS hos_guid FROM person'
+])
+  assert.equal(await chooseHook(sql, ['hos_guid']), null)
+
+assert.equal(
+  await chooseHook('SELECT person_id AS x, 1 AS person_id FROM person', ['x', 'person_id']),
+  null
+)
